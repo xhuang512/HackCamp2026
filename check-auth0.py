@@ -132,19 +132,44 @@ def main() -> int:
         print("        so the email code is the only door.")
 
     print("\nthe sign-in button")
-    # connection=email is exactly what src/lib/auth.jsx sends.
-    page = authorize(domain, client_id, audience, connection="email")
-    if page is None:
+    # connection=email is exactly what src/lib/auth.jsx sends. Two different
+    # failures hide behind one symptom here, so they are told apart by asking
+    # for a connection that certainly does not exist and comparing.
+    email_page = authorize(domain, client_id, audience, connection="email")
+    control = authorize(domain, client_id, audience, connection="no-such-connection-xyz")
+    if email_page is None or control is None:
         return report()
-    body, _url = page
 
-    if 'name="password"' in body:
+    email_body, email_url = email_page
+    _control_body, control_url = control
+
+    rejected = "error=" in control_url
+    email_rejected = "error=" in email_url
+
+    if email_rejected:
         bad(
-            "asking for connection=email still lands on a password form",
-            "Step 4. Authentication, Passwordless, Email, choose Code, then open"
-            " its Applications tab and enable it for this SPA. Auth0 ignores an"
-            " unknown connection and falls back, which is why it looks like"
-            " nothing happened.",
+            "Auth0 says the email connection is not enabled for this app",
+            "Step 4. Authentication, Passwordless, Email, then its Applications"
+            " tab, and toggle this SPA on. Enabling the connection is not"
+            " enough on its own.",
+        )
+    elif not rejected:
+        print("  note  cannot tell, Auth0 accepted a connection that does not exist")
+    elif 'name="password"' in email_body:
+        others = [
+            name
+            for name in ("Username-Password-Authentication", "google-oauth2", "apple", "github")
+            if (page := authorize(domain, client_id, audience, connection=name))
+            and "error=" not in page[1]
+        ]
+        bad(
+            "the email connection is enabled, but a password form is what loads",
+            "Another connection is taking the screen"
+            + (f", {' and '.join(others)}" if others else "")
+            + ". Turn each one off for this app under its own Applications tab,"
+            " so the email code is the only connection left. Also confirm the"
+            " connection named email lives under Authentication, Passwordless,"
+            " and is not a database connection with that name.",
         )
     else:
         ok("the email code screen is what the app's button reaches")
