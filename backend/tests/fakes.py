@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import date, timedelta
+from types import SimpleNamespace
+from typing import Any
+from uuid import uuid4
+
+
+def next_weekday(target: int) -> date:
+    today = date.today()
+    delta = (target - today.weekday()) % 7
+    return today + timedelta(days=delta or 7)
+
+
+def seed_tables() -> dict[str, list[dict[str, Any]]]:
+    return {
+        "tags": [
+            {"id": 1, "slug": "transfer", "label": "Transfer student"},
+        ],
+        "languages": [{"code": "en", "name": "English"}],
+        "courses": [{"id": 1, "code": "STAT 302", "title": "Introduction"}],
+        "buildings": [{"id": 1, "name": "The Nest"}],
+        "students": [
+            {
+                "id": "s_current",
+                "first_name": "Maya",
+                "paused": False,
+                "deleted_at": None,
+            },
+            {
+                "id": "s_other",
+                "first_name": "Amir",
+                "paused": False,
+                "deleted_at": None,
+            },
+        ],
+        "student_tags": [
+            {"student_id": "s_current", "tag_id": 1},
+            {"student_id": "s_other", "tag_id": 1},
+        ],
+        "student_languages": [
+            {"student_id": "s_current", "language_code": "en"},
+            {"student_id": "s_other", "language_code": "en"},
+        ],
+        "student_courses": [
+            {"student_id": "s_current", "course_id": 1, "term": "2026W1"},
+            {"student_id": "s_other", "course_id": 1, "term": "2026W1"},
+        ],
+        "free_blocks": [
+            {
+                "id": 1,
+                "student_id": "s_current",
+                "day": 1,
+                "start_time": "13:00:00",
+                "end_time": "15:00:00",
+            }
+        ],
+        "groups": [
+            {
+                "id": "g_41",
+                "on_date": next_weekday(1).isoformat(),
+                "start_time": "13:15:00",
+                "end_time": "14:30:00",
+                "building_id": 1,
+                "mode": "study",
+                "status": "proposed",
+                "created_at": "2026-11-07T00:00:00Z",
+            }
+        ],
+        "group_members": [
+            {
+                "group_id": "g_41",
+                "student_id": "s_current",
+                "response": "pending",
+                "arrived_at": None,
+            },
+            {
+                "group_id": "g_41",
+                "student_id": "s_other",
+                "response": "joined",
+                "arrived_at": None,
+            },
+        ],
+    }
+
+
+class FakeSupabase:
+    """Small PostgREST query fake used by contract and repository tests."""
+
+    def __init__(self, tables: dict[str, list[dict[str, Any]]] | None = None):
+        self.tables = deepcopy(tables or seed_tables())
+
+    def table(self, name: str) -> FakeQuery:
+        self.tables.setdefault(name, [])
+        return FakeQuery(self, name)
+
+
+class FakeQuery:
+    def __init__(self, client: FakeSupabase, table: str):
+        self.client = client
+        self.table_name = table
+        self.action = "select"
+        self.payload: Any = None
+        self.filters: list[tuple[str, str, Any]] = []
+        self.orders: list[str] = []
+        self.max_rows: int | None = None
+
+    def select(self, _columns: str) -> FakeQuery:
+        self.action = "select"
+        return self
+
+    def insert(self, payload: Any) -> FakeQuery:
+        self.action = "insert"
+        self.payload = payload
+        return self
+
+    def update(self, payload: dict[str, Any]) -> FakeQuery:
+        self.action = "update"
+        self.payload = payload
+        return self
+
+    def delete(self) -> FakeQuery:
+        self.action = "delete"
+        return self
+
+    def eq(self, column: str, value: Any) -> FakeQuery:
+        self.filters.append(("eq", column, value))
+        return self
+
+    def in_(self, column: str, values: list[Any]) -> FakeQuery:
+        self.filters.append(("in", column, values))
+        return self
+
+    def gte(self, column: str, value: Any) -> FakeQuery:
+        self.filters.append(("gte", column, value))
+        return self
+
+    def is_(self, column: str, value: Any) -> FakeQuery:
+        self.filters.append(("is", column, value))
+        return self
+
+    def order(self, column: str) -> FakeQuery:
+        self.orders.append(column)
+        return self
+
+    def limit(self, count: int) -> FakeQuery:
+        self.max_rows = count
+        return self
+
+    def execute(self) -> SimpleNamespace:
+        rows = self.client.tables[self.table_name]
+        if self.action == "insert":
+            payloads = self.payload if isinstance(self.payload, list) else [self.payload]
+            created = []
+            for payload in payloads:
+                row = deepcopy(payload)
+                if self.table_name == "students":
+                    row.setdefault("id", str(uuid4()))
+                    row.setdefault("paused", False)
+                    row.setdefault("deleted_at", None)
+                if self.table_name == "groups":
+                    row.setdefault("id", str(uuid4()))
+                if self.table_name == "free_blocks":
+                    row.setdefault("id", len(rows) + 1)
+                rows.append(row)
+                created.append(deepcopy(row))
+            return SimpleNamespace(data=created)
+
+        matched = [row for row in rows if self._matches(row)]
+        for column in reversed(self.orders):
+            matched.sort(key=lambda row: row.get(column))
+        if self.max_rows is not None:
+            matched = matched[: self.max_rows]
+
+        if self.action == "update":
+            for row in matched:
+                row.update(deepcopy(self.payload))
+            return SimpleNamespace(data=deepcopy(matched))
+
+        if self.action == "delete":
+            deleted = deepcopy(matched)
+            self.client.tables[self.table_name] = [
+                row for row in rows if not self._matches(row)
+            ]
+            return SimpleNamespace(data=deleted)
+
+        return SimpleNamespace(data=deepcopy(matched))
+
+    def _matches(self, row: dict[str, Any]) -> bool:
+        for operator, column, expected in self.filters:
+            actual = row.get(column)
+            if operator == "eq" and actual != expected:
+                return False
+            if operator == "in" and actual not in expected:
+                return False
+            if operator == "gte" and actual < expected:
+                return False
+            if operator == "is":
+                if expected == "null" and actual is not None:
+                    return False
+                if expected != "null" and actual != expected:
+                    return False
+        return True
