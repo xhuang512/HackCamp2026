@@ -15,6 +15,10 @@ const BASE = import.meta.env.VITE_API_URL ?? '/api'
 const USE_FIXTURES = import.meta.env.VITE_USE_FIXTURES !== 'false'
 
 const SESSION_KEY = 'hangout.session'
+/* Fixture mode only. Holds the profile that POST /students "created", so the
+   route gate can tell a new student from a returning one with the backend
+   switched off. Never read when USE_FIXTURES is false. */
+const FIXTURE_STUDENT_KEY = 'hangout.fixtureStudent'
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -22,6 +26,24 @@ export class ApiError extends Error {
     this.name = 'ApiError'
     this.status = status
   }
+}
+
+/* ---------- The token ----------
+   Two kinds, both sent as `Authorization: Bearer`, never a cookie: the
+   frontend and backend sit on different domains and Safari blocks cross-site
+   cookies.
+
+     Auth0 access token  Fetched per request by the provider that
+                         src/lib/auth.jsx registers, because it expires and
+                         only the SDK can refresh it.
+     Guest token         Issued by POST /students in demo mode and kept in
+                         localStorage. */
+
+let tokenProvider = null
+
+/** Called by src/lib/auth.jsx. Pass null to unregister. */
+export function setTokenProvider(fn) {
+  tokenProvider = fn
 }
 
 export function getSession() {
@@ -42,8 +64,16 @@ export function setSession(token) {
   }
 }
 
+async function bearer() {
+  if (tokenProvider !== null) {
+    const token = await tokenProvider()
+    if (token) return token
+  }
+  return getSession()
+}
+
 async function request(path, { method = 'GET', body, signal } = {}) {
-  const token = getSession()
+  const token = await bearer()
   let res
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -69,14 +99,61 @@ async function request(path, { method = 'GET', body, signal } = {}) {
 
 /* ---------- Endpoints in the contract ---------- */
 
-/** POST /students — sign up with a preset schedule, tags and first name. */
-export async function signUp({ first_name, tags, schedule_id }) {
-  if (USE_FIXTURES) return { session: 'fixture-session' }
-  const out = await request('/students', {
-    method: 'POST',
-    body: { first_name, tags, schedule_id },
-  })
-  if (out?.session) setSession(out.session)
+/** GET /me — does the signed-in user have a profile yet? The route gate calls
+    this on every app open, so it is the one request between the splash screen
+    and the first real screen. Keep it cheap.
+
+      { "onboarded": false }
+      { "onboarded": true, "student": { id, first_name, paused, visibility } }
+
+    A student with deleted_at set counts as not onboarded. */
+export async function getMe({ signal } = {}) {
+  if (USE_FIXTURES) {
+    const student = readFixtureStudent()
+    return student === null ? { onboarded: false } : { onboarded: true, student }
+  }
+  return request('/me', { signal })
+}
+
+/** POST /students — create the profile at the end of onboarding.
+
+    `auth_sub` is deliberately absent from the body. The backend takes it from
+    the verified token, so nobody can create a profile for someone else.
+    Send either preset_id or free_blocks, never both.
+
+    Returns { student, aha, guest_token }. A guest_token comes back only when
+    `guest` is true and the backend's DEMO_MODE is on; it is stored here so the
+    next request is authenticated. */
+export async function createStudent({
+  first_name,
+  preset_id = null,
+  free_blocks = null,
+  tags = [],
+  languages = [],
+  ask_me_about = null,
+  visibility = 'everyone',
+  guest = false,
+}) {
+  const body = {
+    first_name,
+    preset_id,
+    free_blocks,
+    tags,
+    languages,
+    ask_me_about,
+    visibility,
+    guest,
+  }
+
+  if (USE_FIXTURES) {
+    const out = fixtures.studentCreated(body)
+    writeFixtureStudent(out.student)
+    if (out.guest_token !== null) setSession(out.guest_token)
+    return out
+  }
+
+  const out = await request('/students', { method: 'POST', body })
+  if (out?.guest_token) setSession(out.guest_token)
   return out
 }
 
@@ -110,16 +187,17 @@ export async function adminReset() {
   return request('/admin/reset', { method: 'POST' })
 }
 
-/** GET /health — the one endpoint that exists today. */
+/** GET /health — the one endpoint that existed first. */
 export async function getHealth({ signal } = {}) {
   return request('/health', { signal })
 }
 
 /* ---------- Not in the contract yet ----------
    The Map and Me screens need these, but AGENTS.md lists no endpoint for
-   either (`POST /tables` creates one; nothing reads them, and there is no
-   profile endpoint). They serve fixtures only. Agree the shape with the team
-   before pointing them at a real route. */
+   either (`POST /tables` creates one; nothing reads them, and the only
+   profile route, GET /me, answers the gate's question rather than the Me
+   tab's). They serve fixtures only. Agree the shape with the team before
+   pointing them at a real route. */
 
 /** Open tables near the student. NEEDS AN ENDPOINT. */
 export async function listOpenTables({ signal } = {}) {
@@ -127,10 +205,61 @@ export async function listOpenTables({ signal } = {}) {
   return request('/tables', { signal })
 }
 
-/** The signed-in student's own profile. NEEDS AN ENDPOINT. */
-export async function getMe({ signal } = {}) {
-  if (USE_FIXTURES) return fixtures.me
-  return request('/me', { signal })
+/** Pause or resume matching. The Me tab's switch and the paused banner both
+    call it. NEEDS AN ENDPOINT.
+
+    Pausing is a privacy setting the matcher must always respect, so this is
+    not a cosmetic toggle: until the route exists, fixture mode is the only
+    place it does anything. */
+export async function setPaused(paused) {
+  if (USE_FIXTURES) {
+    const student = readFixtureStudent()
+    if (student !== null) writeFixtureStudent({ ...student, paused })
+    return { paused }
+  }
+  return request('/me/paused', { method: 'POST', body: { paused } })
+}
+
+/** The Me tab's fuller profile: tags and the private hangout count, which
+    GET /me does not carry. NEEDS AN ENDPOINT. */
+export async function getMyProfile({ signal } = {}) {
+  if (USE_FIXTURES) {
+    const student = readFixtureStudent()
+    return { ...fixtures.me, ...(student === null ? {} : student) }
+  }
+  return request('/me/profile', { signal })
+}
+
+/* ---------- Fixture-mode profile store ----------
+   Without this, fixture mode has to answer GET /me the same way forever, so
+   either onboarding or Right now is unreachable and the demo check cannot
+   pass with the backend off. Not used once VITE_USE_FIXTURES is false. */
+
+function readFixtureStudent() {
+  try {
+    const raw = localStorage.getItem(FIXTURE_STUDENT_KEY)
+    return raw === null ? null : JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function writeFixtureStudent(student) {
+  try {
+    localStorage.setItem(FIXTURE_STUDENT_KEY, JSON.stringify(student))
+  } catch {
+    /* The gate will treat them as not onboarded next open. Nothing better to
+       do here, and it must not break the signup that just succeeded. */
+  }
+}
+
+/** Called on log out. A no-op against a real backend. */
+export function clearFixtureStudent() {
+  try {
+    localStorage.removeItem(FIXTURE_STUDENT_KEY)
+  } catch {
+    /* Nothing to do. */
+  }
 }
 
 export const usingFixtures = USE_FIXTURES

@@ -1,5 +1,7 @@
+import { useCallback, useState } from 'react'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
+import { useAuth } from '../lib/authContext.js'
 import ScreenHeader from '../components/ScreenHeader.jsx'
 import StateCard from '../components/StateCard.jsx'
 import Icon from '../components/Icon.jsx'
@@ -20,7 +22,22 @@ const TAG_LABELS = {
 }
 
 export default function Me() {
-  const { data, error, loading, reload } = useAsync(api.getMe)
+  const { data, error, loading, reload } = useAsync(api.getMyProfile)
+  const { logout } = useAuth()
+  const [pausing, setPausing] = useState(false)
+
+  const togglePause = useCallback(
+    async (paused) => {
+      setPausing(true)
+      try {
+        await api.setPaused(paused)
+        reload()
+      } finally {
+        setPausing(false)
+      }
+    },
+    [reload],
+  )
 
   return (
     <>
@@ -70,10 +87,8 @@ export default function Me() {
               <input
                 type="checkbox"
                 checked={data.paused}
-                onChange={() => {
-                  /* No endpoint yet. Agree the shape before wiring it. */
-                  console.warn('pause suggestions: no endpoint yet')
-                }}
+                disabled={pausing}
+                onChange={(e) => togglePause(e.target.checked)}
               />
             </label>
 
@@ -90,6 +105,13 @@ export default function Me() {
               Other students only see that you&apos;re free and the tags above.
             </p>
           </div>
+
+          {/* Logging out clears the Auth0 session and any guest token, then
+              the route gate shows Welcome. The profile stays, so signing back
+              in skips onboarding. */}
+          <button type="button" className="btn btn--outline btn--lg" onClick={logout}>
+            Log out
+          </button>
         </>
       )}
     </>
