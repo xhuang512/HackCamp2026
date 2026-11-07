@@ -118,6 +118,45 @@
   --c-map-road: var(--bg);
   --c-map-building: var(--line);
 
+  /* Map pins and the "you are here" dot.
+     Every one of these is a var() of a token that already flips with the
+     theme, so none of them needs a dark-mode override.
+
+     --c-pin-edge is the load-bearing one. A pin's FILL cannot be relied on
+     to separate it from the tiles underneath, which are arbitrary: the
+     social fill is only 2.4:1 against Positron's land and 2.4:1 against
+     Dark Matter's. The 2px edge does that job instead, and because it
+     tracks --c-ink it always opposes theme-matched tiles. Measured 11:1 to
+     17:1 against Positron and Dark Matter land, water and roads. */
+  --c-pin-edge: var(--c-ink);
+
+  /* Social and study pins. The two fills differ in hue but NOT reliably in
+     lightness (0.17 luminance apart in dark mode), so colour alone must
+     never be what tells them apart. Each pin carries its own glyph and its
+     own aria-label; the colour is reinforcement, not the signal. */
+  --c-pin-social: var(--c-accent);
+  --c-on-pin-social: var(--c-on-accent);
+  /* The warm accent, reused as a category colour. Nothing to do with the
+     "live" state: every pin on the map is live by definition. */
+  --c-pin-study: var(--c-live);
+  --c-on-pin-study: var(--c-on-live);
+
+  --c-me-dot: var(--c-accent);
+  --c-me-edge: var(--c-ink);
+  --c-me-halo: var(--c-accent);
+
+  /* The bar the map header and buttons sit on. Solid, not translucent:
+     text over semi-transparent tiles has no guaranteed contrast ratio,
+     and the whole point of the accessibility track is not guessing. */
+  --c-map-scrim: var(--c-bg);
+
+  /* The real height of .tabbar: 8 top + 52 link + 24 bottom + inset.
+     .app__screen used to compute the same total a different way
+     (--tap-lg + --s-11); both now read this token so they cannot drift. */
+  --tabbar-h: calc(
+    var(--tap-lg) + var(--s-3) + var(--s-10) + env(safe-area-inset-bottom)
+  );
+
   /* Type */
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Space Grotesk", var(--font-sans);

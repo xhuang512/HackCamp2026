@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import TabBar from './components/TabBar.jsx'
 import RightNow from './pages/RightNow.jsx'
 import MapPage from './pages/MapPage.jsx'
@@ -8,12 +8,21 @@ import Me from './pages/Me.jsx'
    The Projector screen is deliberately outside this shell: it is a
    full-screen stage view with no tab bar. */
 
+/* Routes whose screen fills the viewport and does not scroll. The map owns
+   its own gestures, so the page must not scroll underneath it. */
+const FULL_BLEED = ['/map']
+
 function TabShell() {
+  const { pathname } = useLocation()
+  const full = FULL_BLEED.includes(pathname)
+
   return (
-    <div className="app">
-      <main className="app__screen">
+    <div className={full ? 'app app--full' : 'app'}>
+      <main className={full ? 'app__screen app__screen--full' : 'app__screen'}>
         <Outlet />
-        <div className="spacer" />
+        {/* A flex-grow spacer next to a full-height map is exactly what
+            reintroduces page scroll, so it is omitted there. */}
+        {!full && <div className="spacer" />}
       </main>
       <TabBar />
     </div>

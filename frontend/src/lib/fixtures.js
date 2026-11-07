@@ -33,3 +33,55 @@ export const me = {
   hangouts_count: 3,
   paused: false,
 }
+
+/* Hangouts happening now, for the map. Shaped off `groups` joined to
+   `buildings` in backend/schema.sql.
+
+   No names. A public surface gets a mode, a place, a joined count and an
+   end time, and nothing else. A count is not a name.
+
+   Only status 'active' rows belong on the map. A 'proposed' group would
+   expose a match before the group has opted in, which the "meeting spots
+   revealed only after the group opts in" rule forbids.
+
+   COORDINATES ARE APPROXIMATE AND UNVERIFIED. See the warning at the top
+   of mapConfig.js: check every lat/lng on a real map before the demo. */
+
+export const hangoutsNow = [
+  {
+    id: 'g_41',
+    mode: 'social',
+    status: 'active',
+    start: '13:00',
+    end: '15:00',
+    size: 4,
+    building: { slug: 'nest', name: 'The Nest', lat: 49.2666, lng: -123.2497 },
+  },
+  {
+    id: 'g_42',
+    mode: 'study',
+    status: 'active',
+    start: '13:15',
+    end: '14:30',
+    size: 3,
+    building: { slug: 'ikb', name: 'Irving K Barber', lat: 49.2675, lng: -123.2527 },
+  },
+  {
+    id: 'g_43',
+    mode: 'study',
+    status: 'active',
+    start: '12:30',
+    end: '14:00',
+    size: 5,
+    building: { slug: 'koerner', name: 'Koerner Library', lat: 49.2679, lng: -123.2555 },
+  },
+  {
+    id: 'g_44',
+    mode: 'social',
+    status: 'active',
+    start: '13:30',
+    end: '14:15',
+    size: 3,
+    building: { slug: 'life', name: 'Life Building', lat: 49.2663, lng: -123.2487 },
+  },
+]
