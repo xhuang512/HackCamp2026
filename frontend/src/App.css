@@ -17,6 +17,19 @@
   }
 }
 
+.backend-status {
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.backend-status.connected {
+  color: #16a34a;
+}
+
+.backend-status.unavailable {
+  color: #dc2626;
+}
+
 .hero {
   position: relative;
 
