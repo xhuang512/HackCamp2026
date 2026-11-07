@@ -148,6 +148,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertTrue(
             {
                 "/students",
+                "/options",
                 "/me/now",
                 "/groups/{id}/join",
                 "/groups/{id}/skip",

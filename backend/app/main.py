@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import admin, groups, projector, students
+from app.routers import admin, groups, options, projector, students
 
 app = FastAPI(title="Hangout API")
 
@@ -14,6 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(students.router)
+app.include_router(options.router)
 app.include_router(groups.router)
 app.include_router(projector.router)
 app.include_router(admin.router)

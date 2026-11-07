@@ -16,7 +16,12 @@ def next_weekday(target: int) -> date:
 def seed_tables() -> dict[str, list[dict[str, Any]]]:
     return {
         "tags": [
-            {"id": 1, "slug": "transfer", "label": "Transfer student"},
+            {
+                "id": 1,
+                "slug": "transfer",
+                "label": "Transfer student",
+                "category": "student_type",
+            },
         ],
         "languages": [{"code": "en", "name": "English"}],
         "courses": [{"id": 1, "code": "STAT 302", "title": "Introduction"}],
@@ -102,6 +107,7 @@ class FakeQuery:
         self.table_name = table
         self.action = "select"
         self.payload: Any = None
+        self.conflict_column: str | None = None
         self.filters: list[tuple[str, str, Any]] = []
         self.orders: list[str] = []
         self.max_rows: int | None = None
@@ -113,6 +119,12 @@ class FakeQuery:
     def insert(self, payload: Any) -> FakeQuery:
         self.action = "insert"
         self.payload = payload
+        return self
+
+    def upsert(self, payload: Any, *, on_conflict: str) -> FakeQuery:
+        self.action = "upsert"
+        self.payload = payload
+        self.conflict_column = on_conflict
         return self
 
     def update(self, payload: dict[str, Any]) -> FakeQuery:
@@ -150,11 +162,25 @@ class FakeQuery:
 
     def execute(self) -> SimpleNamespace:
         rows = self.client.tables[self.table_name]
-        if self.action == "insert":
+        if self.action in {"insert", "upsert"}:
             payloads = self.payload if isinstance(self.payload, list) else [self.payload]
             created = []
             for payload in payloads:
                 row = deepcopy(payload)
+                if self.action == "upsert":
+                    existing = next(
+                        (
+                            item
+                            for item in rows
+                            if item.get(self.conflict_column)
+                            == row.get(self.conflict_column)
+                        ),
+                        None,
+                    )
+                    if existing is not None:
+                        existing.update(row)
+                        created.append(deepcopy(existing))
+                        continue
                 if self.table_name == "students":
                     row.setdefault("id", str(uuid4()))
                     row.setdefault("paused", False)
@@ -163,6 +189,12 @@ class FakeQuery:
                     row.setdefault("id", str(uuid4()))
                 if self.table_name == "free_blocks":
                     row.setdefault("id", len(rows) + 1)
+                if self.table_name in {"tags", "courses"}:
+                    next_id = max(
+                        (item.get("id", 0) for item in rows),
+                        default=0,
+                    ) + 1
+                    row.setdefault("id", next_id)
                 rows.append(row)
                 created.append(deepcopy(row))
             return SimpleNamespace(data=created)

@@ -1,7 +1,8 @@
 from collections import Counter
 from typing import Any
 
-from app.repositories.base import ReferenceDataError, RepositoryError, execute
+from app.repositories.base import RepositoryError, execute
+from app.repositories.reference_data import ReferenceDataRepository
 
 
 class StudentRepository:
@@ -38,17 +39,12 @@ class StudentRepository:
     def add_tags(self, student_id: str, slugs: list[str]) -> None:
         if not slugs:
             return
-        rows = execute(
-            self.client.table("tags").select("id,slug").in_("slug", slugs),
-            "resolve student tags",
-        )
-        by_slug = {row["slug"]: row["id"] for row in rows}
-        self._require_all("tags", slugs, by_slug)
+        by_slug = ReferenceDataRepository(self.client).resolve_tags(slugs)
         execute(
             self.client.table("student_tags").insert(
                 [
                     {"student_id": student_id, "tag_id": by_slug[slug]}
-                    for slug in dict.fromkeys(slugs)
+                    for slug in by_slug
                 ]
             ),
             "create student tags",
@@ -57,20 +53,15 @@ class StudentRepository:
     def add_languages(self, student_id: str, names: list[str]) -> None:
         if not names:
             return
-        rows = execute(
-            self.client.table("languages").select("code,name").in_("name", names),
-            "resolve student languages",
-        )
-        by_name = {row["name"]: row["code"] for row in rows}
-        self._require_all("languages", names, by_name)
+        codes = ReferenceDataRepository(self.client).resolve_languages(names)
         execute(
             self.client.table("student_languages").insert(
                 [
                     {
                         "student_id": student_id,
-                        "language_code": by_name[name],
+                        "language_code": code,
                     }
-                    for name in dict.fromkeys(names)
+                    for code in codes
                 ]
             ),
             "create student languages",
@@ -79,12 +70,7 @@ class StudentRepository:
     def add_courses(self, student_id: str, codes: list[str], term: str) -> None:
         if not codes:
             return
-        rows = execute(
-            self.client.table("courses").select("id,code").in_("code", codes),
-            "resolve student courses",
-        )
-        by_code = {row["code"]: row["id"] for row in rows}
-        self._require_all("courses", codes, by_code)
+        by_code = ReferenceDataRepository(self.client).resolve_or_create_courses(codes)
         execute(
             self.client.table("student_courses").insert(
                 [
@@ -93,7 +79,7 @@ class StudentRepository:
                         "course_id": by_code[code],
                         "term": term,
                     }
-                    for code in dict.fromkeys(codes)
+                    for code in by_code
                 ]
             ),
             "create student courses",
@@ -167,11 +153,3 @@ class StudentRepository:
         )
         values = {row[catalog_id]: row[value_column] for row in catalog}
         return [values[item] for item in shared_ids if item in values]
-
-    @staticmethod
-    def _require_all(kind: str, requested: list[str], found: dict[str, Any]) -> None:
-        missing = [value for value in dict.fromkeys(requested) if value not in found]
-        if missing:
-            raise ReferenceDataError(
-                f"Unknown {kind}: {', '.join(missing)}"
-            )

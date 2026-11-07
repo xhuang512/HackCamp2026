@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time, timedelta
 from typing import Any
 
 from app.engine import GroupPlan, form_groups
@@ -16,7 +16,15 @@ class MatchingResult:
     target_date: date
     plans: tuple[GroupPlan, ...]
     created_group_ids: tuple[str, ...]
+    filled_group_ids: tuple[str, ...]
+    added_memberships: int
     already_assigned_students: int
+
+
+@dataclass(frozen=True)
+class GroupAddition:
+    group_id: str
+    student_ids: tuple[str, ...]
 
 
 def run_matching(
@@ -28,7 +36,8 @@ def run_matching(
     """Plan or persist simple groups for one calendar date.
 
     Existing proposed/active memberships on the date are excluded, making
-    serial CLI reruns idempotent for already assigned students.
+    serial CLI reruns idempotent for already assigned students. Compatible
+    existing groups are filled to five before new groups are formed.
     """
     students = StudentRepository(client)
     free_blocks = FreeBlockRepository(client)
@@ -50,26 +59,51 @@ def run_matching(
         available_ids,
         day=target_date.weekday(),
     )
-    plans = tuple(form_groups(blocks))
+    additions = _plan_existing_group_additions(
+        existing_groups,
+        existing_memberships,
+        blocks,
+    )
+    added_ids = {
+        student_id
+        for addition in additions
+        for student_id in addition.student_ids
+    }
+    plans = tuple(
+        form_groups(
+            [row for row in blocks if str(row["student_id"]) not in added_ids]
+        )
+    )
 
-    if not persist or not plans:
+    if not persist or (not additions and not plans):
         return MatchingResult(
             target_date=target_date,
             plans=plans,
             created_group_ids=(),
+            filled_group_ids=tuple(item.group_id for item in additions),
+            added_memberships=sum(len(item.student_ids) for item in additions),
             already_assigned_students=len(assigned_ids),
         )
 
-    building = BuildingRepository(client).first_available()
+    building_id = (
+        int(BuildingRepository(client).first_available()["id"]) if plans else None
+    )
+    filled_ids: list[str] = []
+    for addition in additions:
+        members.create_pending(addition.group_id, addition.student_ids)
+        filled_ids.append(addition.group_id)
+
     created_ids: list[str] = []
     for plan in plans:
+        if building_id is None:
+            raise RepositoryError("A valid building is required for a new group")
         created: dict[str, Any] | None = None
         try:
             created = groups.create(
                 on_date=target_date,
                 start_time=plan.start_time,
                 end_time=plan.end_time,
-                building_id=int(building["id"]),
+                building_id=building_id,
             )
             group_id = str(created["id"])
             members.create_pending(group_id, plan.student_ids)
@@ -86,5 +120,75 @@ def run_matching(
         target_date=target_date,
         plans=plans,
         created_group_ids=tuple(created_ids),
+        filled_group_ids=tuple(filled_ids),
+        added_memberships=sum(len(item.student_ids) for item in additions),
         already_assigned_students=len(assigned_ids),
+    )
+
+
+def next_matching_dates(
+    weekdays: set[int],
+    *,
+    from_date: date | None = None,
+) -> tuple[date, ...]:
+    """Return the next calendar occurrence of each weekly availability day."""
+    start = from_date or date.today()
+    dates: list[date] = []
+    for weekday in sorted(weekdays):
+        if not 0 <= weekday <= 6:
+            raise ValueError(f"invalid weekday: {weekday}")
+        days_ahead = (weekday - start.weekday()) % 7
+        dates.append(start + timedelta(days=days_ahead))
+    return tuple(sorted(dates))
+
+
+def _plan_existing_group_additions(
+    groups: list[dict[str, Any]],
+    memberships: list[dict[str, Any]],
+    blocks: list[dict[str, Any]],
+    *,
+    max_size: int = 5,
+) -> tuple[GroupAddition, ...]:
+    by_group: dict[str, list[dict[str, Any]]] = {
+        str(group["id"]): [] for group in groups
+    }
+    for membership in memberships:
+        by_group.setdefault(str(membership["group_id"]), []).append(membership)
+
+    remaining = {str(block["student_id"]) for block in blocks}
+    additions: list[GroupAddition] = []
+    for group in groups:
+        group_id = str(group["id"])
+        current = by_group.get(group_id, [])
+        # A declined group is left unchanged. Replacing skipped members needs a
+        # separate lifecycle policy so it cannot accidentally reveal its spot.
+        if any(member["response"] == "skipped" for member in current):
+            continue
+        capacity = max_size - len(current)
+        if capacity <= 0:
+            continue
+        compatible = sorted(
+            student_id
+            for student_id in remaining
+            if _student_covers_group(student_id, group, blocks)
+        )[:capacity]
+        if not compatible:
+            continue
+        additions.append(GroupAddition(group_id, tuple(compatible)))
+        remaining.difference_update(compatible)
+    return tuple(additions)
+
+
+def _student_covers_group(
+    student_id: str,
+    group: dict[str, Any],
+    blocks: list[dict[str, Any]],
+) -> bool:
+    group_start = time.fromisoformat(str(group["start_time"]))
+    group_end = time.fromisoformat(str(group["end_time"]))
+    return any(
+        str(block["student_id"]) == student_id
+        and time.fromisoformat(str(block["start_time"])) <= group_start
+        and time.fromisoformat(str(block["end_time"])) >= group_end
+        for block in blocks
     )

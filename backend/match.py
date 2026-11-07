@@ -50,9 +50,15 @@ def main() -> int:
         parser.error(str(exc))
 
     action = "created" if args.apply else "planned"
+    group_count = (
+        len(result.created_group_ids) + len(result.filled_group_ids)
+        if args.apply
+        else len(result.plans) + len(result.filled_group_ids)
+    )
     print(
-        f"{action} {len(result.created_group_ids) if args.apply else len(result.plans)} "
-        f"group(s) for {result.target_date.isoformat()}; "
+        f"{action} {group_count} group action(s) for "
+        f"{result.target_date.isoformat()}; "
+        f"{result.added_memberships} student(s) added to existing groups; "
         f"{result.already_assigned_students} student(s) already assigned"
     )
     for plan in result.plans:

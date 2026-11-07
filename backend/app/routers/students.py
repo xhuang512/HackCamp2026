@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import date
 from typing import Annotated, Any, Literal
@@ -12,14 +13,17 @@ from app.auth import (
     get_current_student_id,
 )
 from app.db import get_db_client
+from app.matching import next_matching_dates, run_matching
 from app.repositories import RecordNotFoundError, ReferenceDataError, RepositoryError
 from app.repositories.free_blocks import FreeBlockRepository, resolve_preset
 from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
+from app.repositories.reference_data import normalize_course_codes
 from app.repositories.students import StudentRepository
 from app.routers.groups import MeetingSpot, SuggestedGroup
 
 router = APIRouter(tags=["students"])
+logger = logging.getLogger(__name__)
 
 
 class StudentCreate(BaseModel):
@@ -36,9 +40,21 @@ class StudentCreate(BaseModel):
     )
 
     first_name: str = Field(min_length=1, max_length=80, description="Student's first name")
-    tags: list[str] = Field(default_factory=list, description="Lightweight matching tags")
-    languages: list[str] = Field(default_factory=list, description="Languages the student speaks")
-    courses: list[str] = Field(default_factory=list, description="Current course codes")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Canonical student-type tag slugs returned by GET /options",
+    )
+    languages: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Canonical language codes returned by GET /options; existing language "
+            "names are also accepted"
+        ),
+    )
+    courses: list[str] = Field(
+        default_factory=list,
+        description="UBC-style course codes; values such as stat406 normalize to STAT 406",
+    )
     preset_schedule: str = Field(
         min_length=1,
         description="Frontend-defined key for a preset schedule",
@@ -117,6 +133,13 @@ def create_student(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="CURRENT_TERM is required to persist student courses",
         )
+    try:
+        course_codes = normalize_course_codes(student.courses)
+    except ReferenceDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
     students = StudentRepository(client)
     free_blocks = FreeBlockRepository(client)
@@ -126,7 +149,7 @@ def create_student(
         student_id = str(created["id"])
         students.add_tags(student_id, student.tags)
         students.add_languages(student_id, student.languages)
-        students.add_courses(student_id, student.courses, term or "")
+        students.add_courses(student_id, course_codes, term or "")
         free_blocks.create_for_student(student_id, blocks)
     except ReferenceDataError as exc:
         _rollback_student(students, created)
@@ -140,6 +163,18 @@ def create_student(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not persist student onboarding",
         ) from exc
+
+    for target_date in next_matching_dates({block.day for block in blocks}):
+        try:
+            run_matching(client, target_date, persist=True)
+        except RepositoryError:
+            # Onboarding has already succeeded. A later signup or the batch CLI
+            # can retry this student without forcing duplicate registration.
+            logger.exception(
+                "Automatic matching failed after creating student %s for %s",
+                student_id,
+                target_date,
+            )
 
     return StudentSession(
         student_id=student_id,
