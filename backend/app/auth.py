@@ -115,6 +115,22 @@ def _jwks() -> jwt.PyJWKClient:
     return _jwks_client
 
 
+def check_auth0_reachable() -> str | None:
+    """Fetch Auth0's signing keys once, now. None means they came back.
+
+    This is a setup aid, not a health check. Every way of getting the Auth0
+    config wrong looks identical from a phone, which is one silent 401, so the
+    server says which part is broken at boot instead.
+    """
+    if not config.AUTH0_READY:
+        return "AUTH0_DOMAIN or AUTH0_AUDIENCE is not set"
+    try:
+        _jwks().fetch_data()
+    except Exception as cause:  # noqa: BLE001 - any failure is the same answer
+        return f"could not read https://{config.AUTH0_DOMAIN}/.well-known/jwks.json ({cause})"
+    return None
+
+
 def _read_auth0_token(token: str) -> str | None:
     """The `sub` an Auth0 access token names, or None if it does not verify.
 

@@ -5,6 +5,7 @@ calling, store.py holds students, engine.py will form the groups.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, time
 from typing import Annotated
@@ -38,7 +39,11 @@ async def lifespan(_: FastAPI):
     healthy server.
     """
     if config.AUTH0_READY:
-        log.info("auth: Auth0 ready (%s)", config.AUTH0_DOMAIN)
+        problem = auth.check_auth0_reachable()
+        if problem is None:
+            log.info("auth: Auth0 ready (%s)", config.AUTH0_DOMAIN)
+        else:
+            log.error("auth: Auth0 configured but unusable, %s", problem)
     if config.DEMO_MODE:
         log.info("auth: DEMO_MODE on, guest sign-in and /admin/reset available")
     if not config.AUTH0_READY and not config.DEMO_MODE:
@@ -180,6 +185,28 @@ def set_paused(
     """
     updated = store.set_paused(student.id, body.paused)
     return _student_out(updated or student)
+
+
+@app.get("/auth/config")
+def auth_config() -> dict[str, object]:
+    """What this server thinks it is configured for.
+
+    Purely a setup aid, for working through the Auth0 checklist in
+    docs/SIGNUP.md with curl instead of a phone. It exposes nothing private:
+    the domain and the audience are both already compiled into the public
+    frontend bundle, and the secrets are reported as set or unset, never read
+    back.
+    """
+    return {
+        "demo_mode": config.DEMO_MODE,
+        "guest_token_secret_set": bool(os.getenv("GUEST_TOKEN_SECRET")),
+        "auth0": {
+            "configured": config.AUTH0_READY,
+            "domain": config.AUTH0_DOMAIN,
+            "audience": config.AUTH0_AUDIENCE,
+            "problem": auth.check_auth0_reachable(),
+        },
+    }
 
 
 @app.post("/admin/reset")
