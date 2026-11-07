@@ -49,7 +49,7 @@ HackCamp2026/
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/xhuang512/HackCamp2026.git
 cd HackCamp2026
 ```
 
