@@ -67,7 +67,7 @@ def main() -> int:
     else:
         bad(
             "frontend/.env.local is missing VITE_AUTH0_DOMAIN or VITE_AUTH0_CLIENT_ID",
-            "Step 9. Copy frontend/.env.example to .env.local and fill it in.",
+            "Step 10. Copy frontend/.env.example to .env.local and fill it in.",
         )
         return report()
 
@@ -76,7 +76,7 @@ def main() -> int:
     else:
         bad(
             "backend/.env does not match the frontend's domain and audience",
-            "Step 9. AUTH0_DOMAIN and AUTH0_AUDIENCE must be character for "
+            "Step 10. AUTH0_DOMAIN and AUTH0_AUDIENCE must be character for "
             "character what the frontend sends, or every token is rejected.",
         )
 
@@ -111,7 +111,7 @@ def main() -> int:
     if "Callback URL mismatch" in body or "callback_url_mismatch" in body.lower():
         bad(
             f"{REDIRECT_URI} is not an allowed callback URL",
-            "Step 6. Add it to Allowed Callback URLs, Logout URLs and Web Origins.",
+            "Step 7. Add it to Allowed Callback URLs, Logout URLs and Web Origins.",
         )
     else:
         ok(f"{REDIRECT_URI} is an allowed callback URL")
@@ -164,12 +164,17 @@ def main() -> int:
         ]
         bad(
             "the email connection is enabled, but a password form is what loads",
-            "Another connection is taking the screen"
-            + (f", {' and '.join(others)}" if others else "")
-            + ". Turn each one off for this app under its own Applications tab,"
-            " so the email code is the only connection left. Also confirm the"
-            " connection named email lives under Authentication, Passwordless,"
-            " and is not a database connection with that name.",
+            "Authentication, Authentication Profile, set it to Identifier"
+            " First. The default, Identifier + Password, renders a password"
+            " field whatever the connections say, so passwordless never gets"
+            " a screen."
+            + (
+                f" Then turn off {' and '.join(others)} for this app, under"
+                " each one's own Applications tab, so the email code is the"
+                " only connection left."
+                if others
+                else ""
+            ),
         )
     else:
         ok("the email code screen is what the app's button reaches")
