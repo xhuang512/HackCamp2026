@@ -270,6 +270,20 @@ def attendance_status(
     return AttendanceStatus.PENDING
 
 
+def check_in_allowed(group: GroupLifecycle, *, at: datetime) -> bool:
+    """Whether accepted members may verify attendance at this instant.
+
+    A confirmed group becomes check-in eligible when its actual meeting
+    interval starts. ``active`` is also accepted because the first successful
+    check-in may already have advanced the durable group state.
+    """
+    _require_aware(at, "check-in timestamp")
+    return (
+        group.status in {GroupStatus.CONFIRMED, GroupStatus.ACTIVE}
+        and group.meeting_start <= at < group.meeting_end
+    )
+
+
 def accepted_member_count(memberships: Iterable[MembershipLifecycle]) -> int:
     return sum(
         member.invitation_status == InvitationStatus.ACCEPTED

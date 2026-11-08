@@ -24,6 +24,18 @@ class GroupRepository:
             "read upcoming groups",
         )
 
+    def get(self, group_id: str) -> dict[str, Any]:
+        rows = execute(
+            self.client.table("groups")
+            .select(self._select_columns())
+            .eq("id", group_id)
+            .limit(1),
+            "read group",
+        )
+        if not rows:
+            raise RecordNotFoundError("Group was not found")
+        return rows[0]
+
     def list_for_matching_date(self, on_date: date) -> list[dict[str, Any]]:
         """Return groups that can block assignment or accept more invitations."""
         return execute(

@@ -12,6 +12,7 @@ from app.lifecycle import (
     active_capacity_count,
     advance_group_for_time,
     attendance_status,
+    check_in_allowed,
     expire_invitations,
     respond_to_invitation,
     transition_group,
@@ -261,6 +262,28 @@ class LifecycleTests(unittest.TestCase):
             AttendanceStatus.NO_SHOW,
         )
         self.assertEqual(checked_in.invitation_status, InvitationStatus.ACCEPTED)
+
+    def test_checkin_window_follows_confirmed_and_active_meeting_interval(self) -> None:
+        confirmed = replace(self.group, status=GroupStatus.CONFIRMED)
+        active = replace(self.group, status=GroupStatus.ACTIVE)
+
+        self.assertFalse(
+            check_in_allowed(confirmed, at=self.start - timedelta(microseconds=1))
+        )
+        self.assertTrue(check_in_allowed(confirmed, at=self.start))
+        self.assertTrue(
+            check_in_allowed(active, at=self.end - timedelta(microseconds=1))
+        )
+        self.assertFalse(check_in_allowed(active, at=self.end))
+        for status in (
+            GroupStatus.FORMING,
+            GroupStatus.COMPLETED,
+            GroupStatus.DISSOLVED,
+        ):
+            with self.subTest(status=status):
+                self.assertFalse(
+                    check_in_allowed(replace(self.group, status=status), at=self.start)
+                )
 
     def test_non_accepted_member_cannot_have_check_in_timestamp(self) -> None:
         with self.assertRaisesRegex(ValueError, "only an accepted member"):

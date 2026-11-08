@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from app.repositories.base import (
+    CheckInConflictError,
     InvitationConflictError,
     RecordNotFoundError,
     RepositoryError,
@@ -109,6 +110,40 @@ class GroupMemberRepository:
                 "No membership exists for the current student and group"
             )
         return normalize_membership(rows[0])
+
+    def check_in_pair(
+        self,
+        group_id: str,
+        scanner_id: str,
+        presenter_id: str,
+        checked_in_at: str,
+    ) -> dict[str, Any]:
+        """Atomically check in two accepted members through the database RPC."""
+        try:
+            rpc_response = self.client.rpc(
+                "check_in_group_members",
+                {
+                    "p_group_id": group_id,
+                    "p_scanner_id": scanner_id,
+                    "p_presenter_id": presenter_id,
+                    "p_checked_in_at": checked_in_at,
+                },
+            ).execute()
+        except Exception as exc:
+            code = _error_attribute(exc, "code")
+            message = _error_attribute(exc, "message") or "Group check-in was rejected"
+            if code in {"P0002", "22P02"}:
+                raise RecordNotFoundError(message) from exc
+            if code in {"P0001", "22023"}:
+                raise CheckInConflictError(message) from exc
+            raise RepositoryError("Database operation failed: group check-in") from exc
+
+        rows = getattr(rpc_response, "data", None)
+        if rows is None:
+            raise RepositoryError("Database returned no result: group check-in")
+        if not rows:
+            raise RecordNotFoundError("Group check-in returned no membership")
+        return dict(rows[0])
 
     def _list(self, query: Any, operation: str) -> list[dict[str, Any]]:
         return [normalize_membership(row) for row in execute(query, operation)]

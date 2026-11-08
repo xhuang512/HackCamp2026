@@ -17,6 +17,10 @@ class InvitationConflictError(RepositoryError):
     """Raised when an invitation response violates lifecycle rules."""
 
 
+class CheckInConflictError(RepositoryError):
+    """Raised when meetup check-in violates lifecycle or membership rules."""
+
+
 def execute(query: Any, operation: str) -> list[dict[str, Any]]:
     try:
         response = query.execute()
