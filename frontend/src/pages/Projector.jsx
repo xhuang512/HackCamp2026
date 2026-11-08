@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { PROJECTOR_POLL_MS } from '../lib/live.js'
@@ -17,6 +18,38 @@ export default function Projector() {
   const { data, error, loading, stale, reload } = useAsync(api.getProjector, [], {
     pollMs: PROJECTOR_POLL_MS,
   })
+
+  /* Step 6 of the AGENTS.md demo check is POST /admin/reset restoring the
+     seed data, and there was no way to do it from the app. It belongs here
+     rather than on a student's phone: this screen is the laptop the person
+     running the demo is already standing at, and the route is public so it
+     needs no session.
+
+     Gated on the backend's own demo_mode, not on VITE_DEMO_MODE, because the
+     endpoint is refused outright when the server's DEMO_MODE is off. Asking
+     first means the button is absent rather than present and broken. */
+  const config = useAsync(api.getAuthConfig)
+  const resettable = config.data?.demo_mode === true
+
+  const [resetting, setResetting] = useState(false)
+  const [resetError, setResetError] = useState(null)
+
+  const reseed = useCallback(async () => {
+    /* A reseed deletes the seed students and their groups. Harmless, and
+       still worth one tap of confirmation on a machine wired to a projector
+       in front of a room. */
+    if (!window.confirm('Reseed the demo data? This clears the seeded groups and check-ins.')) return
+    setResetting(true)
+    setResetError(null)
+    try {
+      await api.adminReset()
+      reload()
+    } catch (err) {
+      setResetError(err)
+    } finally {
+      setResetting(false)
+    }
+  }, [reload])
 
   return (
     <div className="stage on-dark">
@@ -59,6 +92,22 @@ export default function Projector() {
             </ul>
           )}
         </>
+      )}
+
+      {resettable && (
+        <div className="stage__admin">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={reseed}
+            disabled={resetting}
+          >
+            {resetting ? 'Reseeding…' : 'Reset demo data'}
+          </button>
+          {resetError !== null && (
+            <p className="stage__note" role="alert">{resetError.message}</p>
+          )}
+        </div>
       )}
     </div>
   )

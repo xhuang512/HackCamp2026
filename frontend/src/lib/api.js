@@ -329,6 +329,26 @@ export async function adminReset() {
   return request('/admin/reset', { method: 'POST' })
 }
 
+/** GET /auth/config — what the backend thinks it is configured for.
+
+    Public and callable before sign-in, which is the point: it is the only
+    way the frontend can know whether the backend will actually issue a guest
+    token. VITE_DEMO_MODE is the frontend's own opinion and the two disagree
+    whenever only one of them is set.
+
+      { demo_mode, guest_token_secret_set,
+        auth0: { configured, domain, audience, problem } }
+
+    It reports secrets as set or unset and never reads them back. The domain
+    and audience are already in the public bundle.
+
+    No fixture branch: there is no backend to describe in fixture mode, and a
+    made-up answer here would hide the exact misconfiguration this is for.
+    Callers handle the failure instead. */
+export async function getAuthConfig({ signal } = {}) {
+  return request('/auth/config', { signal })
+}
+
 /** GET /health — the one endpoint that existed first. */
 export async function getHealth({ signal } = {}) {
   return request('/health', { signal })

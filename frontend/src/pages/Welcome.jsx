@@ -1,3 +1,5 @@
+import * as api from '../lib/api.js'
+import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
 import Icon from '../components/Icon.jsx'
 
@@ -10,6 +12,18 @@ import Icon from '../components/Icon.jsx'
 export default function Welcome() {
   const { error, canLoginWithGoogle, guestAllowed, loginWithGoogle, loginAsGuest } =
     useAuth()
+
+  /* guestAllowed is the frontend's own VITE_DEMO_MODE. The backend decides
+     whether a guest token is actually issued, and the two disagree whenever
+     only one of them is set: the button appears, the student taps it, and
+     POST /students refuses with nothing on screen to explain why.
+     GET /auth/config is the authoritative answer and needs no session.
+
+     Only a definite `false` says anything. A backend that is down or
+     unreachable leaves this silent, because the job of this screen is to get
+     people in and a failed sign-in reports itself. */
+  const config = useAsync(api.getAuthConfig)
+  const guestsRefused = guestAllowed && config.data?.demo_mode === false
 
   return (
     <div className="welcome">
@@ -51,9 +65,17 @@ export default function Welcome() {
             type="button"
             className={canLoginWithGoogle ? 'btn btn--outline btn--lg' : 'btn btn--primary btn--xl'}
             onClick={loginAsGuest}
+            disabled={guestsRefused}
           >
             Continue as guest
           </button>
+        )}
+
+        {guestsRefused && (
+          <p className="welcome__note" role="status">
+            Guest sign-in is off on the server. Set DEMO_MODE=true in the
+            backend&apos;s .env and restart it.
+          </p>
         )}
 
         {!canLoginWithGoogle && (

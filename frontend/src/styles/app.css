@@ -1109,6 +1109,19 @@
   gap: var(--s-3);
 }
 
+/* The demo operator's control. Pushed to the bottom edge by margin-top:auto
+   against the stage's centred column, so it never competes with the number
+   the room is looking at. Full contrast rather than dimmed: it is small and
+   out of the way already, and lowering opacity would be the one thing here
+   that fails 4.5:1. */
+.stage__admin {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+}
+
 .stage__dot {
   width: 12px;
   height: 12px;
