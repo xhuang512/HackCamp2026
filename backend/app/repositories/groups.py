@@ -38,6 +38,20 @@ class GroupRepository:
             "read upcoming groups",
         )
 
+    def modes_for(self, group_ids: list[str]) -> dict[str, str]:
+        """Group id to 'social' or 'study', for the mode badges.
+
+        One query for the whole list, because the alternative is one per
+        membership on a screen that already loads a profile.
+        """
+        if not group_ids:
+            return {}
+        rows = execute(
+            self.client.table("groups").select("id,mode").in_("id", group_ids),
+            "read group modes",
+        )
+        return {str(row["id"]): str(row["mode"]) for row in rows}
+
     def get(self, group_id: str) -> dict[str, Any]:
         rows = execute(
             self.client.table("groups")

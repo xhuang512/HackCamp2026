@@ -60,7 +60,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertTrue(response.json()["student"]["is_guest"])
         self.assertEqual(
             [badge["slug"] for badge in response.json()["badges"]],
-            ["first_hello", "regular", "familiar_face"],
+            ["community_host", "social_regular", "study_regular", "super_host"],
         )
         self.assertEqual(
             response.json()["badges"][1]["progress"],
@@ -276,7 +276,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertTrue(first.json()["counted"])
         self.assertEqual(
             first.json()["new_badges"],
-            [{"slug": "first_hello", "name": "First Hello"}],
+            [{"slug": "community_host", "name": "Community Host"}],
         )
         # Scanning the same person twice changes nothing.
         self.assertEqual(again.json()["checked_in_count"], 2)
@@ -307,7 +307,7 @@ class ApiContractTests(unittest.TestCase):
                 {"first_name": "Maya", "top_badge": None},
                 {
                     "first_name": "Amir",
-                    "top_badge": {"slug": "regular", "name": "Regular"},
+                    "top_badge": {"slug": "community_host", "name": "Community Host"},
                 },
             ],
         )

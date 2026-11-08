@@ -26,6 +26,7 @@ from ..matching import next_matching_dates, run_matching
 from ..repositories import ReferenceDataError, RepositoryError
 from ..repositories.free_blocks import FreeBlockInput, FreeBlockRepository
 from ..repositories.group_members import GroupMemberRepository
+from ..repositories.groups import GroupRepository
 from ..repositories.reference_data import normalize_course_codes
 from ..repositories.students import StudentRepository
 from ..models import (
@@ -141,9 +142,13 @@ def get_me(
     if student is None or not student.onboarded:
         return MeResponse(onboarded=False)
     try:
+        memberships = GroupMemberRepository(client).list_for_student(student.id)
         badges = badges_for(
             student.id,
-            GroupMemberRepository(client).list_for_student(student.id),
+            memberships,
+            GroupRepository(client).modes_for(
+                [str(member["group_id"]) for member in memberships]
+            ),
         )
     except RepositoryError as exc:
         raise HTTPException(

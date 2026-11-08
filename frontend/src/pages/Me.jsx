@@ -5,6 +5,7 @@ import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
 import { STUDENT_TAGS } from '../lib/presets.js'
 import Icon from '../components/Icon.jsx'
+import { badgeArt } from '../lib/badgeArt.js'
 import StateCard from '../components/StateCard.jsx'
 import ScheduleEditor from '../components/ScheduleEditor.jsx'
 import TimetableDay from '../components/TimetableDay.jsx'
@@ -348,14 +349,25 @@ export default function Me() {
                     className={badge.earned ? 'achievement' : 'achievement achievement--locked'}
                   >
                     <span className="achievement__icon">
-                      <Icon name={badge.earned ? 'badge' : 'lock'} size={22} />
+                      {badgeArt(badge.slug) === null ? (
+                        <Icon name={badge.earned ? 'badge' : 'lock'} size={22} />
+                      ) : (
+                        <img
+                          className="achievement__art"
+                          src={badgeArt(badge.slug)}
+                          alt=""
+                          width="56"
+                          height="56"
+                          loading="lazy"
+                        />
+                      )}
                     </span>
                     <span className="achievement__text">
                       <span className="row__name">{badge.name}</span>
                       <span className="row__meta">
                         {badge.earned
                           ? 'Earned'
-                          : `${badge.progress.current} of ${badge.progress.target} check-ins`}
+                          : `${badge.progress.current} of ${badge.progress.target} hangouts`}
                       </span>
                     </span>
                   </li>

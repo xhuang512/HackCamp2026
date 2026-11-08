@@ -576,14 +576,22 @@ def post_checkin(
 
     try:
         memberships = GroupMemberRepository(client)
-        before_badges = badges_for(student_id, memberships.list_for_student(student_id))
+
+        def student_badges():
+            rows = memberships.list_for_student(student_id)
+            modes = GroupRepository(client).modes_for(
+                [str(row["group_id"]) for row in rows]
+            )
+            return badges_for(student_id, rows, modes)
+
+        before_badges = student_badges()
         result = memberships.check_in_pair(
             id,
             student_id,
             scanned_id,
             now.isoformat(),
         )
-        after_badges = badges_for(student_id, memberships.list_for_student(student_id))
+        after_badges = student_badges()
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CheckInConflictError as exc:
