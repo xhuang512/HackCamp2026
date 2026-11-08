@@ -419,8 +419,8 @@
 .row {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-xl);
-  padding: var(--s-6) var(--s-7);
+  border-radius: var(--r-sm);
+  padding: var(--s-6);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -438,7 +438,8 @@
   align-items: center;
   gap: var(--s-4);
   font-size: var(--t-15);
-  font-weight: var(--w-semibold);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
 }
 
 .row__meta {
@@ -614,9 +615,9 @@
 }
 
 .settings-field {
-  padding: var(--s-5) var(--s-7);
+  padding: var(--s-6);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-sm);
   background: var(--c-surface);
 }
 
@@ -627,11 +628,17 @@
 
 /* ---------- Me ---------- */
 
+/* A filled tile, the way the frame draws the identity block, rather than a
+   bare row on the page. The outer margin matches .card so the two line up
+   down the screen. */
 .me-id {
-  padding: var(--s-9) var(--gutter) 0;
+  margin: var(--s-5) var(--gutter) 0;
+  padding: var(--s-6);
+  border-radius: var(--r-sm);
+  background: var(--c-sunken);
   display: flex;
   align-items: center;
-  gap: var(--s-6);
+  gap: var(--s-5);
 }
 
 .me-id__edit {
@@ -651,11 +658,11 @@
 }
 
 .me-id__avatar {
-  width: 64px;
-  height: 64px;
+  width: 52px;
+  height: 52px;
   border-radius: var(--r-pill);
-  background: var(--c-ink);
-  color: var(--c-surface);
+  background: var(--c-accent-dark);
+  color: var(--c-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -698,8 +705,8 @@
   min-height: var(--tap);
   background: var(--c-surface);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-xl);
-  padding: var(--s-5) var(--s-7);
+  border-radius: var(--r-sm);
+  padding: var(--s-6);
   cursor: pointer;
 }
 
