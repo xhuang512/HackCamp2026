@@ -171,7 +171,7 @@ export default function MapPage() {
           aria-controls="place-list"
           onClick={() => setSheetOpen((open) => !open)}
         >
-          {loading ? 'Loading the map' : 'Buildings with people free'}
+          {loading ? 'Loading the map' : 'Browse buildings'}
           <span className="map-sheet__count">
             {loading ? '' : `${places.length} on the map`}
           </span>
@@ -200,6 +200,11 @@ export default function MapPage() {
                       <span className="pin-list__name">{place.name}</span>
                       <span className="pin-list__meta">{placeMeta(place)}</span>
                     </span>
+                    {/* The frame's "The Nest ›". Decorative: the button's
+                        aria-label already says it shows the place on the
+                        map, so a screen reader should not also read a
+                        chevron. */}
+                    <span className="pin-list__chev" aria-hidden="true">›</span>
                   </button>
                 </li>
               ))}
