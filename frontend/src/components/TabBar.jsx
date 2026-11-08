@@ -1,16 +1,16 @@
 import { NavLink } from 'react-router-dom'
-import Icon from './Icon.jsx'
 
+/* Text-only, three labels, as the redesign frames draw the bottom bar. */
 const TABS = [
-  { to: '/', icon: 'clock', label: 'Right now' },
-  { to: '/map', icon: 'map', label: 'Map' },
-  { to: '/me', icon: 'person', label: 'Me' },
+  { to: '/', label: 'Groups' },
+  { to: '/map', label: 'Map' },
+  { to: '/me', label: 'My profile' },
 ]
 
 export default function TabBar() {
   return (
     <nav className="tabbar" aria-label="Main">
-      {TABS.map(({ to, icon, label }) => (
+      {TABS.map(({ to, label }) => (
         <NavLink
           key={to}
           to={to}
@@ -21,7 +21,6 @@ export default function TabBar() {
         >
           {({ isActive }) => (
             <>
-              <Icon name={icon} />
               {label}
               {isActive && <span className="sr-only"> (current page)</span>}
             </>

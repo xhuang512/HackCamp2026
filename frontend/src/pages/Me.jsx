@@ -3,10 +3,9 @@ import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
 import { STUDENT_TAGS } from '../lib/presets.js'
-import ScreenHeader from '../components/ScreenHeader.jsx'
 import StateCard from '../components/StateCard.jsx'
-import Icon from '../components/Icon.jsx'
 import ScheduleEditor from '../components/ScheduleEditor.jsx'
+import TimetableDay from '../components/TimetableDay.jsx'
 
 /* Styled from Figma frames 8081:2 (My profile) and 8081:92 (Settings).
 
@@ -26,6 +25,22 @@ import ScheduleEditor from '../components/ScheduleEditor.jsx'
 const NAME_MAX = 40
 const TAGS_MAX = 10
 
+
+/* The frames' hexagonal profile stickers. The artwork is not in the repo, so
+   each tag gets a plain octagon carrying its first letter: same slot and
+   size, no invented icons. */
+function Sticker({ label }) {
+  return (
+    <span className="rd-sticker">
+      <svg viewBox="0 0 44 44" width="44" height="44" aria-hidden="true">
+        <polygon points="14,3 30,3 41,14 41,30 30,41 14,41 3,30 3,14" />
+        <text x="22" y="28" textAnchor="middle">{label[0].toUpperCase()}</text>
+      </svg>
+      <span className="rd-sticker__label">{label.split(' ')[0]}</span>
+    </span>
+  )
+}
+
 export default function Me() {
   const { data, error, loading, reload } = useAsync(api.getMe)
   const student = data?.student ?? null
@@ -33,7 +48,9 @@ export default function Me() {
   const [pausing, setPausing] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [actionError, setActionError] = useState(null)
-  const [scheduleOpen, setScheduleOpen] = useState(false)
+  /* 'profile', 'settings' or 'timetable': the redesign's three screens. */
+  const [view, setView] = useState('profile')
+  const [blocks, setBlocks] = useState([])
 
   /* The canonical tag list, the same source onboarding reads. A second
      hardcoded list here is how the two drift until a saved tag stops
@@ -102,49 +119,130 @@ export default function Me() {
     auth.logout()
   }
 
-  return (
+  const back = (to) => (
+    <button type="button" className="rd-back" onClick={() => { setView(to); setEdit(null) }}>
+      {to === 'profile' ? '‹ My profile' : '‹ Back'}
+    </button>
+  )
+
+  const problems = (
     <>
-      <ScreenHeader eyebrow="Your account" title="Me" small />
-
       {loading && <StateCard title="Loading your profile" />}
-
       {error && (
         <StateCard title="Could not load your profile" onRetry={reload}>
           {error.message}
         </StateCard>
       )}
-
       {data?.onboarded === false && <StateCard title="No profile yet">Finish onboarding to set up your profile.</StateCard>}
       {actionError && <StateCard title="Could not save that change">{actionError.message}</StateCard>}
+    </>
+  )
+
+  /* ---------- Settings ---------- */
+  if (view === 'settings') {
+    return (
+      <>
+        {back('profile')}
+        <header className="rd-head rd-head--tight"><h1 className="rd-title">Settings</h1></header>
+        {problems}
+        {student && (
+          <>
+            <section className="rd-card rd-card--section">
+              <h2 className="rd-card__title">Group suggestions</h2>
+              <p className="rd-card__meta">Pause matching whenever you need a break.</p>
+              <button
+                type="button"
+                className="rd-toggle"
+                aria-pressed={student.paused}
+                disabled={pausing}
+                onClick={() => togglePause(!student.paused)}
+              >
+                Pause suggestions · {student.paused ? 'On' : 'Off'}
+              </button>
+            </section>
+
+            <section className="rd-card rd-card--section">
+              <h2 className="rd-card__title">Who can match with you</h2>
+              <label className="field settings-field">
+                <span className="sr-only">Who can match with you</span>
+                <select
+                  className="field__input"
+                  value={student.visibility}
+                  disabled={savingVisibility}
+                  onChange={(event) => changeVisibility(event.target.value)}
+                >
+                  <option value="everyone">Everyone</option>
+                  <option value="my_courses">People in my courses</option>
+                  <option value="shared_tag">People with a shared tag</option>
+                </select>
+              </label>
+              <p className="row__meta">Other students only see that you&apos;re free and the tags on your profile.</p>
+            </section>
+
+            {/* Logging out clears the Auth0 session and any guest token, then
+                the route gate shows Welcome. The profile stays, so signing
+                back in skips onboarding. The frame's Delete account and
+                Notifications have no endpoint behind them, so are not drawn. */}
+            <section className="rd-card rd-card--section">
+              <h2 className="rd-card__title">Account</h2>
+              <p className="rd-card__meta">
+                {student.is_guest ? 'Guest account · unverified' : 'Signed in'}
+              </p>
+              <button type="button" className="rd-row-btn" onClick={logOut}>Sign out</button>
+            </section>
+          </>
+        )}
+      </>
+    )
+  }
+
+  /* ---------- Timetable ---------- */
+  if (view === 'timetable') {
+    return (
+      <>
+        {back('profile')}
+        <header className="rd-head rd-head--tight"><h1 className="rd-title">Your timetable</h1></header>
+        <p className="rd-sub rd-sub--sm">
+          Private · Only your shared free time is visible to others.
+        </p>
+        <TimetableDay blocks={blocks} />
+        <ScheduleEditor onBlocksChange={setBlocks} />
+      </>
+    )
+  }
+
+  /* ---------- My profile ---------- */
+  return (
+    <>
+      <header className="rd-head"><h1 className="rd-title">My profile</h1></header>
+      {problems}
 
       {student && (
         <>
-          <div className="me-id">
-            <span className="me-id__avatar" aria-hidden="true">
+          <div className="rd-panel rd-id">
+            <span className="rd-id__avatar" aria-hidden="true">
               {student.first_name[0].toUpperCase()}
             </span>
-            <div className="screen-head__text">
-              <span className="screen-head__title screen-head__title--sm">
-                {student.first_name}
-              </span>
-              <span className="screen-head__eyebrow">
-                {student.is_guest ? 'Guest · ' : ''}{student.tags.map(labelFor).join(' · ')}
-              </span>
+            <div className="rd-id__text">
+              <span className="rd-id__name">{student.first_name}</span>
+              {student.is_guest && <span className="rd-id__role">Guest</span>}
             </div>
-            {edit === null && (
-              <button
-                type="button"
-                className="btn btn--ghost me-id__edit"
-                onClick={() => setEdit({ first_name: student.first_name, tags: student.tags })}
-              >
-                Edit
-              </button>
-            )}
+            <div className="rd-stickers">
+              {student.tags.slice(0, 3).map((tag) => <Sticker key={tag} label={labelFor(tag)} />)}
+            </div>
           </div>
 
-          {edit !== null && (
-            <div className="section">
-              <h2 className="section__title">Edit profile</h2>
+          {edit === null ? (
+            <button
+              type="button"
+              className="rd-row-btn rd-row-btn--inline"
+              onClick={() => setEdit({ first_name: student.first_name, tags: student.tags })}
+            >
+              Edit name and tags
+            </button>
+          ) : (
+            <div className="rd-card rd-card--section">
+              <h2 className="rd-card__title">Edit profile</h2>
 
               <label className="field settings-field">
                 <span className="field__label">First name</span>
@@ -223,68 +321,26 @@ export default function Me() {
             </div>
           )}
 
-          <div className="section">
-            <h2 className="section__title">Settings</h2>
+          {student.favourite_spots?.length > 0 && (
+            <div className="rd-panel rd-panel--grey">
+              <strong className="rd-panel__title">My favourite study spot</strong>
+              <span className="rd-panel__text">{student.favourite_spots[0]}</span>
+            </div>
+          )}
 
-            <label className="switch">
-              <span className="switch__text">
-                <span className="row__name">Pause suggestions</span>
-                <span className="row__meta">
-                  We stop putting you in groups until you turn this off.
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={student.paused}
-                disabled={pausing}
-                onChange={(e) => togglePause(e.target.checked)}
-              />
-            </label>
-
-            <label className="field settings-field">
-              <span className="field__label">Who can match with you</span>
-              <select
-                className="field__input"
-                value={student.visibility}
-                disabled={savingVisibility}
-                onChange={(event) => changeVisibility(event.target.value)}
-              >
-                <option value="everyone">Everyone</option>
-                <option value="my_courses">People in my courses</option>
-                <option value="shared_tag">People with a shared tag</option>
-              </select>
-            </label>
-
-            <button
-              type="button"
-              className="row row--button"
-              aria-expanded={scheduleOpen}
-              aria-controls="schedule-editor"
-              onClick={() => setScheduleOpen((open) => !open)}
-            >
-              <div className="row__text">
-                <span className="row__name">Your timetable</span>
-                <span className="row__meta">Upload and review your availability.</span>
-              </div>
-              <span className="row__action" aria-hidden="true">
-                {scheduleOpen ? 'Close' : 'Edit schedule'}
-                <span className="row__chevron">{scheduleOpen ? '−' : '›'}</span>
-              </span>
-            </button>
-
-            {scheduleOpen && <ScheduleEditor />}
-
-            <p className="note note--sm">
-              <Icon name="lock" size={20} />
-              Other students only see that you&apos;re free and the tags above.
-            </p>
+          <div className="rd-panel rd-panel--grey">
+            <strong className="rd-panel__title">Private to you</strong>
+            <span className="rd-panel__text">
+              Other students only see that you&apos;re free and your tags.
+            </span>
           </div>
 
-          {/* Logging out clears the Auth0 session and any guest token, then
-              the route gate shows Welcome. The profile stays, so signing back
-              in skips onboarding. */}
-          <button type="button" className="btn btn--outline btn--lg me-logout" onClick={logOut}>
-            Log out
+          <button type="button" className="btn btn--primary btn--lg btn--block rd-gap" onClick={() => setView('timetable')}>
+            Timetable
+          </button>
+
+          <button type="button" className="rd-row-btn rd-row-btn--nav" onClick={() => setView('settings')}>
+            Settings <span aria-hidden="true">›</span>
           </button>
         </>
       )}

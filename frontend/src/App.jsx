@@ -21,7 +21,9 @@ import Welcome from './pages/Welcome.jsx'
 
 /* Routes whose screen fills the viewport and does not scroll. The map owns
    its own gestures, so the page must not scroll underneath it. */
-const FULL_BLEED = ['/map']
+/* The redesign draws Map as a scrolling page (map block, then the building
+   list), so no route is full bleed any more. */
+const FULL_BLEED = []
 
 function TabShell({ paused, onResume, resuming }) {
   const { pathname } = useLocation()

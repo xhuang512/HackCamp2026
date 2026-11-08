@@ -739,6 +739,15 @@
   color: var(--c-accent-dark);
 }
 
+/* The signed hc1 token is about 60 characters, not six digits, so it takes
+   the small size and wraps anywhere instead of overflowing the card. */
+.typed-code__value--token {
+  font-size: var(--t-13);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .copy-code {
   margin-top: var(--s-4);
 }

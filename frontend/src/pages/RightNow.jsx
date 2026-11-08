@@ -1,23 +1,32 @@
-import { useCallback, useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
-import { formatGap, formatDay } from '../lib/format.js'
-import ScreenHeader from '../components/ScreenHeader.jsx'
+import { formatDay, formatRange, vancouverNow } from '../lib/format.js'
 import ModeToggle from '../components/ModeToggle.jsx'
 import GroupCard from '../components/GroupCard.jsx'
 import StateCard from '../components/StateCard.jsx'
 import OpenGroupList from '../components/OpenGroupList.jsx'
 import StartGroupForm from '../components/StartGroupForm.jsx'
-import CheckInCode from '../components/CheckInCode.jsx'
-import CheckInScanner from '../components/CheckInScanner.jsx'
+import YourGroup from '../components/YourGroup.jsx'
+import CheckInScreen from '../components/CheckInScreen.jsx'
 
-/* The screen the whole app is for: one gap, one group, join or skip.
+/* The Groups tab, from the redesign frames: Groups, Your group, and the
+   check-in screen behind its button. The data and every call are the ones
+   this screen already made; only the layout is new.
 
    The mode toggle picks the mode for a group the student starts. It does
    not filter the suggestion: GET /me/now takes no mode parameter, so the
-   matcher's group arrives with a mode of its own. Anything describing that
-   group therefore reads group.mode, never this toggle. Making GET /me/now
-   take a mode is a contract change worth raising first. */
+   matcher's group arrives with a mode of its own, and anything describing
+   that group reads group.mode, never this toggle. */
+
+function Clock() {
+  const [now, setNow] = useState(() => vancouverNow())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(vancouverNow()), 15000)
+    return () => window.clearInterval(id)
+  }, [])
+  return <time className="rd-head__aside">{now}</time>
+}
 
 export default function RightNow() {
   const [mode, setMode] = useState('social')
@@ -25,7 +34,8 @@ export default function RightNow() {
   const [actionError, setActionError] = useState(null)
   const [start, setStart] = useState(null)
   const [starting, setStarting] = useState(false)
-  const [checkinGroupId, setCheckinGroupId] = useState(null)
+  /* null means "follow the data": a joined group opens on Your group. */
+  const [screen, setScreen] = useState(null)
   const { data, error, loading, reload } = useAsync(api.getMeNow)
   const open = useAsync(api.getOpenGroups)
   const catalog = useAsync(api.getOptions)
@@ -35,6 +45,7 @@ export default function RightNow() {
     setActionError(null)
     try {
       await action(groupId)
+      setScreen(null)
       reload()
       open.reload()
     } catch (err) {
@@ -50,6 +61,7 @@ export default function RightNow() {
     try {
       await api.createGroup({ building, mode, now: start === 'now' })
       setStart(null)
+      setScreen(null)
       reload()
     } catch (err) {
       setActionError(err)
@@ -58,25 +70,46 @@ export default function RightNow() {
     }
   }
 
-  /* The suggested group's own mode, which is not necessarily the toggle's.
-     ModeBadge on the card spells the mode out, so the heading does not
-     repeat it. */
-  const label = data?.group?.my_state === 'invited' ? 'Suggested for this gap' : 'Your group for this gap'
-  const setCheckinState = useCallback((groupId, available) => {
-    setCheckinGroupId(available ? groupId : null)
-  }, [])
+  const group = data?.group ?? null
+  const gap = data?.gap ?? null
+  const joined = group !== null && ['joined', 'checked_in'].includes(group.my_state)
+  const current = screen ?? (joined ? 'group' : 'groups')
+
+  if (joined && current === 'group') {
+    return (
+      <YourGroup
+        group={group}
+        gap={gap}
+        onBack={() => setScreen('groups')}
+        onCheckIn={() => setScreen('checkin')}
+      />
+    )
+  }
+
+  if (joined && current === 'checkin') {
+    return (
+      <CheckInScreen
+        group={group}
+        gap={gap}
+        onBack={() => setScreen('group')}
+        onCheckedIn={reload}
+      />
+    )
+  }
 
   return (
     <>
-      <ScreenHeader
-        eyebrow={data?.gap ? `Your next gap, ${formatDay(data.gap.day)}` : 'Your next gap'}
-        title={data?.gap ? formatGap(data.gap) : '—'}
-        action={
-          <button type="button" className="btn btn--outline" onClick={() => setStart('now')}>
-            I&apos;m free now
-          </button>
-        }
-      />
+      <header className="rd-head">
+        <h1 className="rd-title">Groups</h1>
+        <Clock />
+      </header>
+
+      <section className="rd-block" aria-labelledby="availability-title">
+        <h2 className="rd-h2" id="availability-title">My availability</h2>
+        <p className="rd-sub">
+          {gap ? `${formatDay(gap.day)} · ${formatRange(gap)}` : 'No free time found yet'}
+        </p>
+      </section>
 
       <ModeToggle value={mode} onChange={setMode} />
 
@@ -107,30 +140,26 @@ export default function RightNow() {
         />
       )}
 
-      {data && data.group && (
+      {group && !joined && (
         <GroupCard
-          group={data.group}
-          label={label}
-          busy={busyId === data.group.id}
-          onJoin={() => respond(api.joinGroup, data.group.id)}
-          onSkip={() => respond(api.skipGroup, data.group.id)}
+          group={group}
+          gap={gap}
+          busy={busyId === group.id}
+          onJoin={() => respond(api.joinGroup, group.id)}
+          onSkip={() => respond(api.skipGroup, group.id)}
         />
       )}
 
-      {data?.group && ['joined', 'checked_in'].includes(data.group.my_state) && (
-        <div className="checkin-grid">
-          <CheckInCode
-            groupId={data.group.id}
-            meetingStart={data.gap?.start}
-            onAvailabilityChange={setCheckinState}
-          />
-          {checkinGroupId === data.group.id && (
-            <CheckInScanner groupId={data.group.id} onCheckedIn={reload} />
-          )}
-        </div>
+      {/* Joined, but the student came back to the list. */}
+      {joined && (
+        <button type="button" className="rd-panel rd-panel--button" onClick={() => setScreen('group')}>
+          <span className="rd-panel__title">You joined a group</span>
+          <span className="rd-panel__text">{group.checked_in_count} of {group.joined_count} checked in</span>
+          <span className="rd-link">View your group ›</span>
+        </button>
       )}
 
-      {data && data.group === null && !start && (
+      {data && group === null && !start && (
         <>
           {open.loading && <StateCard title="Looking for open groups" />}
           {open.error && <StateCard title="Could not load open groups" onRetry={open.reload}>{open.error.message}</StateCard>}
@@ -140,10 +169,18 @@ export default function RightNow() {
             </StateCard>
           )}
           {open.data && <OpenGroupList groups={open.data} busyId={busyId} onJoin={(id) => respond(api.joinGroup, id)} />}
-          <div className="page-action">
-            <button type="button" className="btn btn--primary btn--lg" onClick={() => setStart('gap')}>Start a group</button>
-          </div>
         </>
+      )}
+
+      {!start && (
+        <div className="rd-actions rd-actions--page">
+          {data && group === null && (
+            <button type="button" className="btn btn--primary btn--lg" onClick={() => setStart('gap')}>Start a group</button>
+          )}
+          <button type="button" className="btn btn--ghost btn--lg" onClick={() => setStart('now')}>
+            I&apos;m free now
+          </button>
+        </div>
       )}
     </>
   )

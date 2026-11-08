@@ -104,26 +104,41 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
 
   return (
     <section className="checkin-card" aria-labelledby="scan-title">
-      <h2 className="section__title" id="scan-title">Scan a groupmate</h2>
-      <video
-        ref={videoRef}
-        className="scanner-video"
-        playsInline
-        muted
-        autoPlay
-        hidden={!camera}
-        aria-label="Camera preview for QR scanning"
-      />
+      <h2 className="section__title" id="scan-title">Scan to check in</h2>
+      <p className="row__meta">Point your camera at a groupmate&apos;s QR code.</p>
+      {/* The frame's dark viewfinder with corner brackets. The live video
+          fills it once the camera is on. */}
+      <div className="rd-viewfinder">
+        <div className="rd-viewfinder__box" aria-hidden={camera ? undefined : 'true'}>
+          <video
+            ref={videoRef}
+            className="scanner-video"
+            playsInline
+            muted
+            autoPlay
+            hidden={!camera}
+            aria-label="Camera preview for QR scanning"
+          />
+          {!camera && (
+            <>
+              <span className="rd-viewfinder__corner rd-viewfinder__corner--tl" />
+              <span className="rd-viewfinder__corner rd-viewfinder__corner--tr" />
+              <span className="rd-viewfinder__corner rd-viewfinder__corner--bl" />
+              <span className="rd-viewfinder__corner rd-viewfinder__corner--br" />
+              <span className="rd-viewfinder__line" />
+            </>
+          )}
+        </div>
+      </div>
       {camera ? (
-        <>
-          <button type="button" className="btn btn--ghost" onClick={stop}>Stop camera</button>
-        </>
+        <button type="button" className="btn btn--ghost btn--lg btn--block" onClick={stop}>Stop camera</button>
       ) : (
-        <button type="button" className="btn btn--primary btn--lg" onClick={start} disabled={busy}>Open camera</button>
+        <button type="button" className="btn btn--primary btn--lg btn--block" onClick={start} disabled={busy}>Enable camera</button>
       )}
+      <h3 className="rd-h3">Enter a code instead</h3>
       <form className="typed-form" onSubmit={typed}>
         <label className="field">
-          <span className="field__label">Or enter their code</span>
+          <span className="field__label">Check-in code</span>
           <input
             className="field__input"
             name="code"
@@ -134,7 +149,7 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
             placeholder="Paste the full hc1… code"
           />
         </label>
-        <button type="submit" className="btn btn--ghost" disabled={busy}>Check in</button>
+        <button type="submit" className="btn btn--ghost btn--block" disabled={busy}>Check in with code</button>
       </form>
       {message && <p className="inline-message" role="status">{message}</p>}
       <p className="row__meta">

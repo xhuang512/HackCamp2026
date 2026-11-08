@@ -73,24 +73,30 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
       </StateCard>
     )
   }
-  if (state.error) return <StateCard title="Could not make your code" onRetry={() => { setState((current) => ({ ...current, loading: true, code: null, image: null, error: null })); setNonce((value) => value + 1) }}>{state.error.message}</StateCard>
+  if (state.error) return <StateCard title={state.error?.status === 409 ? "Check-in is not open" : "Could not make your code"} onRetry={() => { setState((current) => ({ ...current, loading: true, code: null, image: null, error: null })); setNonce((value) => value + 1) }}>{state.error.message}</StateCard>
 
   return (
     <section className="checkin-card" aria-labelledby="my-code-title">
-      <h2 className="section__title" id="my-code-title">My check-in code</h2>
+      <h2 className="section__title" id="my-code-title">Your check-in code</h2>
       <p className="row__meta">
-        Have a groupmate scan this during your meeting. It changes every 30 seconds.
+        Show this to a groupmate when they arrive. It changes every 30 seconds.
       </p>
       <p className="inline-message" role="status">
-        {state.checkedInCount} of {state.joinedCount} accepted members checked in
+        {state.checkedInCount} of {state.joinedCount} checked in
       </p>
-      <img className="checkin-code" src={state.image} alt="Your rotating group check-in QR code" />
+      <div className="checkin-code__frame">
+        <img className="checkin-code" src={state.image} alt="Your rotating group check-in QR code" />
+      </div>
       <details>
-        <summary>Show typed code</summary>
-        <code className="typed-code">{state.code}</code>
-        <button type="button" className="btn btn--ghost copy-code" onClick={copyCode}>
-          {copied ? 'Copied' : 'Copy full code'}
-        </button>
+        <summary>Show manual code</summary>
+        {/* The signed hc1 token, not a PIN: the backend accepts nothing else. */}
+        <div className="typed-code">
+          <span className="typed-code__label">Manual check-in code</span>
+          <code className="typed-code__value typed-code__value--token">{state.code}</code>
+          <button type="button" className="btn btn--ghost copy-code" onClick={copyCode}>
+            {copied ? 'Copied' : 'Copy full code'}
+          </button>
+        </div>
       </details>
     </section>
   )

@@ -9,6 +9,7 @@ export default function ScheduleEditor({
   initialBlocks = [],
   onConfirm = null,
   requireBlocks = false,
+  onBlocksChange = null,
 }) {
   const editorRef = useRef(null)
   const inputRef = useRef(null)
@@ -18,6 +19,12 @@ export default function ScheduleEditor({
   const [blocks, setBlocks] = useState(() => initialBlocks.map((block) => ({ ...block })))
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(false)
+
+  // Lets a screen draw the same blocks (the timetable day view) without a
+  // second copy of the state.
+  useEffect(() => {
+    onBlocksChange?.(blocks)
+  }, [blocks, onBlocksChange])
 
   // The timetable disclosure is near the bottom of the mobile Me screen.
   // Without bringing the newly mounted panel into view, it opens underneath

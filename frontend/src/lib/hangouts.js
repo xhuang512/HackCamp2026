@@ -14,15 +14,17 @@
 export function placeLabel(place) {
   const people = place.count === 1 ? '1 student' : `${place.count} students`
   if (place.mine) {
-    return `${place.name}, where your group is meeting, ${people} free nearby`
+    return `${place.name}, where your group is meeting, ${people} in confirmed groups`
   }
-  return `${place.name}, ${people} free nearby`
+  return `${place.name}, ${people} in confirmed groups`
 }
 
 /** The short line under the place name in the sheet list. */
 export function placeMeta(place) {
   const people = place.count === 1 ? '1 student' : `${place.count} students`
-  return place.mine ? `Your group is here · ${people} free` : `${people} free nearby`
+  /* free_count from GET /map is the joined members of confirmed or active
+     groups meeting at this building today, not people who are free. */
+  return place.mine ? `Your group is here · ${people} joined` : `${people} in confirmed groups`
 }
 
 /** GET /map into the pins the map and the sheet both draw.
