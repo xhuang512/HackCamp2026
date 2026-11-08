@@ -45,7 +45,7 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
       const earned = result.new_badges?.map((badge) => badge.name) ?? []
       setMessage(
         earned.length > 0
-          ? `You earned ${earned.join(' and ')}.`
+          ? `You both checked in. You earned ${earned.join(' and ')}!`
           : result.counted
             ? 'You both checked in.'
             : 'You were already checked in together.',

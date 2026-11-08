@@ -164,6 +164,37 @@ class CheckInApiTests(unittest.TestCase):
         self.assertEqual(self._member("s_current")["arrived_at"], first_timestamp)
         self.assertEqual(self._member("s_other")["arrived_at"], first_timestamp)
 
+    def test_badges_are_awarded_once_per_verified_checkin(self) -> None:
+        first = self._scan("s_current", self._code("s_other"))
+        repeat = self._scan("s_current", self._code("s_other"))
+        # The presenter was checked in by the first scan, so scanning back
+        # changes nothing for them either.
+        reverse = self._scan("s_other", self._code("s_current"))
+
+        self.assertEqual(
+            [b["slug"] for b in first.json()["new_badges"]], ["community_host"]
+        )
+        self.assertEqual(repeat.json()["new_badges"], [])
+        self.assertEqual(reverse.json()["new_badges"], [])
+
+        me = self.client.get("/me", headers=self._headers("s_current")).json()
+        self.assertEqual(
+            [(b["slug"], b["earned"], b["progress"]) for b in me["badges"]],
+            [
+                ("community_host", True, {"current": 1, "target": 1}),
+                # The fixture group is a study group, so only that badge moves.
+                ("social_regular", False, {"current": 0, "target": 3}),
+                ("study_regular", False, {"current": 1, "target": 3}),
+                ("super_host", False, {"current": 1, "target": 5}),
+            ],
+        )
+
+    def test_me_has_locked_badges_before_any_checkin(self) -> None:
+        me = self.client.get("/me", headers=self._headers("s_current")).json()
+
+        self.assertEqual(len(me["badges"]), 4)
+        self.assertFalse(any(b["earned"] for b in me["badges"]))
+
     def test_invalid_self_wrong_group_and_unaccepted_codes_are_rejected(self) -> None:
         invalid = self._scan("s_current", "not-a-code")
         own = self._scan("s_current", self._code("s_current"))

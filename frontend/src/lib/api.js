@@ -138,6 +138,10 @@ async function messageFor(res, method, path) {
                               "badges": [{ slug, name, earned,
                                            progress: { current, target } }] }
 
+    `badges` is computed from verified check-ins, never stored. It is [] when
+    the backend could not read them, because losing a decoration must not
+    cost the student the whole profile.
+
     A student with deleted_at set counts as not onboarded. */
 export async function getMe({ signal } = {}) {
   if (USE_FIXTURES) {
@@ -321,8 +325,9 @@ export async function getCheckinCode(groupId, { signal } = {}) {
 /** POST /groups/{id}/checkin — submit a groupmate's scanned code.
 
     Checks both people in. `counted` is false when the pair had already
-    checked each other in: the scan worked and changed nothing. `new_badges`
-    contains only thresholds the caller crossed during this request. */
+    checked each other in: the scan worked and changed nothing.
+    `new_badges` ([{ slug, name }]) holds only badges this scan earned, so a
+    repeat scan returns []. */
 export async function postCheckin(groupId, code) {
   if (USE_FIXTURES) {
     return {

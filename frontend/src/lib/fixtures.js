@@ -103,6 +103,34 @@ export const campusMap = {
 
 /* ---------- Projector ---------- */
 
+/* Mirrors GET /me's `badges`, from backend/app/badges.py. */
+export const badges = [
+  {
+    slug: 'community_host',
+    name: 'Community Host',
+    earned: true,
+    progress: { current: 1, target: 1 },
+  },
+  {
+    slug: 'social_regular',
+    name: 'Social Regular',
+    earned: false,
+    progress: { current: 1, target: 3 },
+  },
+  {
+    slug: 'study_regular',
+    name: 'Study Regular',
+    earned: false,
+    progress: { current: 0, target: 3 },
+  },
+  {
+    slug: 'super_host',
+    name: 'Super Host',
+    earned: false,
+    progress: { current: 1, target: 5 },
+  },
+]
+
 export const projector = {
   forming: 3,
   confirmed: 4,
@@ -114,26 +142,6 @@ export const projector = {
   ],
 }
 
-export const badges = [
-  {
-    slug: 'first_hello',
-    name: 'First Hello',
-    earned: true,
-    progress: { current: 1, target: 1 },
-  },
-  {
-    slug: 'regular',
-    name: 'Regular',
-    earned: false,
-    progress: { current: 1, target: 3 },
-  },
-  {
-    slug: 'familiar_face',
-    name: 'Familiar Face',
-    earned: false,
-    progress: { current: 1, target: 5 },
-  },
-]
 
 /* ---------- Onboarding options ----------
    Mirrors GET /options, whose ids come from the database lookup tables. */

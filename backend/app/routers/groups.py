@@ -6,6 +6,7 @@ frontend and the tests both already speak them. Everything below them is new
 and follows the API contract in docs/AGENTS.md.
 """
 
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
 
@@ -52,6 +53,8 @@ from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import INVITATION_LEAD, GroupRepository
 from app.repositories.students import StudentRepository
 from app.timezones import APPLICATION_TIMEZONE
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -574,24 +577,27 @@ def post_checkin(
             detail="Both students must accept the invitation before checking in",
         )
 
+    members = GroupMemberRepository(client)
+    # Read before the RPC so the badge comparison is against what was true
+    # before this scan. A failed read only costs the celebration message,
+    # never the check-in itself.
     try:
-        memberships = GroupMemberRepository(client)
+        history = members.list_for_student(student_id)
+        modes = GroupRepository(client).modes_for(
+            [str(row["group_id"]) for row in history]
+        )
+    except RepositoryError:
+        logger.exception("Could not load badge history for %s", student_id)
+        history = None
+        modes = None
 
-        def student_badges():
-            rows = memberships.list_for_student(student_id)
-            modes = GroupRepository(client).modes_for(
-                [str(row["group_id"]) for row in rows]
-            )
-            return badges_for(student_id, rows, modes)
-
-        before_badges = student_badges()
-        result = memberships.check_in_pair(
+    try:
+        result = members.check_in_pair(
             id,
             student_id,
             scanned_id,
             now.isoformat(),
         )
-        after_badges = student_badges()
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CheckInConflictError as exc:
@@ -607,7 +613,35 @@ def post_checkin(
         checked_in_count=int(result["checked_in_count"]),
         my_state="checked_in",
         counted=int(result["changed_count"]) > 0,
-        new_badges=newly_earned_badges(before_badges, after_badges),
+        new_badges=_new_badges(history, modes, student_id, id, now),
+    )
+
+
+def _new_badges(
+    history: list[dict] | None,
+    modes: dict[str, str] | None,
+    student_id: str,
+    group_id: str,
+    now: datetime,
+) -> list:
+    """Badges this scan earned the caller.
+
+    The RPC has just set arrived_at on the caller's row for this group if it
+    was empty, so "after" is "before" with that one row arrived. A repeat
+    scan finds the row already arrived and changes nothing, so it earns
+    nothing. That is what keeps awards from repeating, with no ledger.
+    """
+    if history is None:
+        return []
+    after = [
+        {**row, "arrived_at": row.get("arrived_at") or now.isoformat()}
+        if str(row.get("group_id")) == group_id
+        else row
+        for row in history
+    ]
+    return newly_earned_badges(
+        badges_for(student_id, history, modes),
+        badges_for(student_id, after, modes),
     )
 
 

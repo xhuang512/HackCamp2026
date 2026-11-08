@@ -21,7 +21,7 @@ from supabase import Client
 
 from .. import auth, config, presets, store
 from ..badges import badges_for
-from ..db import get_db_client
+from ..db import get_db_client, get_optional_db_client
 from ..matching import next_matching_dates, run_matching
 from ..repositories import ReferenceDataError, RepositoryError
 from ..repositories.free_blocks import FreeBlockInput, FreeBlockRepository
@@ -127,7 +127,7 @@ def _spot_ids(client: Client, slugs: list[str]) -> list[int]:
 @router.get("/me", response_model=MeResponse)
 def get_me(
     caller: Annotated[auth.Caller, Depends(auth.current_user)],
-    client: Annotated[Client, Depends(get_db_client)],
+    client: Annotated[Client | None, Depends(get_optional_db_client)],
 ) -> MeResponse:
     """Does the signed-in user have a profile?
 
@@ -141,21 +141,37 @@ def get_me(
     student = caller.student
     if student is None or not student.onboarded:
         return MeResponse(onboarded=False)
+    return MeResponse(
+        onboarded=True,
+        student=_student_out(student),
+        badges=_badges(client, student.id),
+    )
+
+
+def _badges(client: Client | None, student_id: str) -> list:
+    """Every badge with progress, or [] when the database cannot answer.
+
+    Badges are decoration. Failing GET /me over them would lock the student
+    out of the whole app, so a read error is logged and the list comes back
+    empty instead.
+    """
+    if client is None:
+        return []
     try:
-        memberships = GroupMemberRepository(client).list_for_student(student.id)
-        badges = badges_for(
-            student.id,
-            memberships,
-            GroupRepository(client).modes_for(
-                [str(member["group_id"]) for member in memberships]
-            ),
+        memberships = GroupMemberRepository(client).list_for_student(student_id)
+    except RepositoryError:
+        logger.exception("Could not load badges for student %s", student_id)
+        return []
+    # The mode badges count study or social hangouts, so the groups'
+    # modes have to come with the memberships.
+    try:
+        modes = GroupRepository(client).modes_for(
+            [str(member["group_id"]) for member in memberships]
         )
-    except RepositoryError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not load profile badges",
-        ) from exc
-    return MeResponse(onboarded=True, student=_student_out(student), badges=badges)
+    except RepositoryError:
+        logger.exception("Could not load group modes for student %s", student_id)
+        modes = None
+    return badges_for(student_id, memberships, modes)
 
 @router.post("/students", response_model=CreateStudentResponse, status_code=201)
 def create_student(

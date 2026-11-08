@@ -73,6 +73,7 @@ const PATHS = {
       <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
     </>
   ),
+  /* From origin/feat/badges. */
   badge: (
     <>
       <circle cx="12" cy="9" r="5.5" />

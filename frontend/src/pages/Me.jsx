@@ -15,7 +15,7 @@ import TimetableDay from '../components/TimetableDay.jsx'
 /* Styled from Figma frames 8081:2 (My profile) and 8081:92 (Settings).
 
    Most of what those frames show is not built and is not meant to be:
-   a Super Host role, pronouns, major, minor, a
+   a Super Host role is Tier 3, and pronouns, major, minor, a
    bio and a favourite spot are fields no endpoint returns. What is here is
    what the API has, wearing the frames' type, fills and corners.
 

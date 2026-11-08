@@ -101,6 +101,8 @@ class MeResponse(BaseModel):
 
     onboarded: bool
     student: StudentOut | None = None
+    # Computed from verified check-ins (app/badges.py). Additive: clients
+    # that ignore it see the same response as before.
     badges: list[BadgeOut] = Field(default_factory=list)
 
 
@@ -319,6 +321,8 @@ class CheckInResult(BaseModel):
     # False when the pair had already checked each other in. The scan
     # succeeded and changed nothing, which is what AGENTS.md asks for.
     counted: bool
+    # Only thresholds the caller crossed in this request, so a repeat scan
+    # always returns [].
     new_badges: list[TopBadgeOut] = Field(default_factory=list)
 
 
