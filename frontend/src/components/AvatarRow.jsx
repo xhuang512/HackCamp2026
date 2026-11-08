@@ -1,7 +1,12 @@
 /* Group members' initials. Members of the same group see each
    other's first names, so initials here are a space decision, not a privacy
    one. GET /groups includes the caller in this list, so this component must
-   not append a second, duplicate "You" avatar. */
+   not append a second, duplicate "You" avatar.
+
+   There is deliberately no public variant. The 8138:2 frame puts initials
+   on open-group cards the reader has not joined, which AGENTS.md forbids,
+   and OpenGroupOut carries no count to draw anonymous circles from either.
+   OpenGroupList shows seats left in that corner instead. */
 
 function initials(name) {
   return name

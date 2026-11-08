@@ -300,6 +300,10 @@ export default function Onboarding({ onDone }) {
       >
         <fieldset className="choices" ref={focusRef} tabIndex={-1}>
           <legend className="field__label">You are</legend>
+          {/* Wrapped, not stacked. The frame lays these out as a run of
+              chips, and six full-width rows pushed Continue off a 390px
+              screen before the student had answered anything. */}
+          <div className="chips">
           {tagOptions.map((tag) => (
             <label
               key={tag.id}
@@ -322,6 +326,7 @@ export default function Onboarding({ onDone }) {
               <span>{tag.label}</span>
             </label>
           ))}
+          </div>
         </fieldset>
 
         {/* "None of these" is a real answer, not an empty one. It marks the

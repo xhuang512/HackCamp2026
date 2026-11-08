@@ -1,3 +1,10 @@
+/* Inter, self-hosted. The Figma frames are Inter throughout, and until now
+   tokens.css named the family without anything ever loading it, so every
+   screen rendered in the system fallback. Self-hosted rather than Google
+   Fonts because the stage demo cannot depend on conference wifi reaching
+   fonts.gstatic.com mid-pitch. One variable file covers 400 to 700. */
+@import "@fontsource-variable/inter";
+
 @import "./styles/tokens.css";
 @import "./styles/app.css";
 

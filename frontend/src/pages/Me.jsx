@@ -8,10 +8,14 @@ import StateCard from '../components/StateCard.jsx'
 import Icon from '../components/Icon.jsx'
 import ScheduleEditor from '../components/ScheduleEditor.jsx'
 
-/* The mockup has no Me screen (its "Me" tab points at the onboarding
-   artboard), so this is built from the privacy rules in AGENTS.md rather
-   than from a drawing. Treat the layout as a placeholder and the rules as
-   the part that matters:
+/* Styled from Figma frames 8081:2 (My profile) and 8081:92 (Settings).
+
+   Most of what those frames show is not built and is not meant to be:
+   badges and a Super Host role are Tier 3, and pronouns, major, minor, a
+   bio and a favourite spot are fields no endpoint returns. What is here is
+   what the API has, wearing the frames' type, fills and corners.
+
+   The rules below are the part that outranks the drawing:
      - the hangout count and the timetable are private to their owner
      - tags are the only thing other students see, beside the free block
      - pause and visibility are always respected by matching */

@@ -31,8 +31,16 @@
   --surface: #f7fafc;
   --bg: #ffffff;
 
-  /* Added: a pale sky for the third avatar. The palette has no light sky. */
+  /* Added: a pale sky for the third avatar. The palette has no light sky.
+     The Figma frames use #97d4e9 and #e0f5f1 for the avatar row; both are
+     adopted below as --av-sky and --av-mint. This paler value stays because
+     the map's "you are here" halo reads it. */
   --sky-tint: #d6f0fb;
+
+  /* Added: the two avatar fills the Figma frames use, taken as drawn.
+     Against --navy they measure 9.90:1 and 14.19:1. */
+  --av-sky: #97d4e9;
+  --av-mint: #e0f5f1;
   /* Added: dark amber text for the live-tint fill in light mode. */
   --on-live-tint: #6b4a00;
 }
@@ -54,17 +62,29 @@
     --live-tint: #3a2e10;
     --sky-tint: #0a3a52;
     --on-live-tint: var(--ink);
+
+    /* The Figma file has no dark mode, so these two are ours. Each is the
+       same hue as its light partner taken down to a dark surface, and both
+       clear 10:1 against --ink. */
+    --av-sky: #0a3a52;
+    --av-mint: #0c3d35;
   }
 }
 
 /* ---------- 3. What components use ---------- */
 
 :root {
-  /* Surfaces. --bg is the page, --surface the raised card. The relationship
-     holds in both modes: in light the card is a touch darker than the page,
-     in dark a touch lighter. */
-  --c-bg: var(--bg);
-  --c-surface: var(--surface);
+  /* Surfaces. In light mode the Figma frames put the tinted #f7fafc on the
+     page and plain white on the card, which is the opposite of what the raw
+     palette names suggest, so the two are crossed here rather than in the
+     palette above.
+
+     Dark mode does NOT cross them, and layer 4 puts it back. A raised card
+     has to be lighter than the page it sits on; crossing them in dark mode
+     would make every card darker than its background and the depth would
+     read backwards. */
+  --c-bg: var(--surface);
+  --c-surface: var(--bg);
   --c-sunken: var(--mist);
   --c-track: var(--mist);
   --c-border: var(--line);
@@ -96,22 +116,24 @@
   --c-sky: var(--sky);
   --c-on-sky: #002145;
 
-  /* Avatar pairs. Each pair is contrast checked in both modes. */
+  /* Avatar pairs, taken from the Figma avatar row: mist, sky, mint.
+     Measured against --c-accent-dark in both modes, worst pair 9.90:1. */
   --c-av-1-bg: var(--mist);
   --c-av-1-fg: var(--c-accent-dark);
-  --c-av-2-bg: var(--live-tint);
-  --c-av-2-fg: var(--on-live-tint);
-  --c-av-3-bg: var(--sky-tint);
+  --c-av-2-bg: var(--av-sky);
+  --c-av-2-fg: var(--c-accent-dark);
+  --c-av-3-bg: var(--av-mint);
   --c-av-3-fg: var(--c-accent-dark);
 
-  /* Group mode, social or study. These reuse the avatar 1 and avatar 3
-     pairs rather than introducing colours, so they are already contrast
-     checked in both modes. The badge always spells its mode out, so colour
-     is never the only thing carrying it. */
-  --c-mode-social-bg: var(--c-av-1-bg);
-  --c-mode-social-fg: var(--c-av-1-fg);
-  --c-mode-study-bg: var(--c-av-3-bg);
-  --c-mode-study-fg: var(--c-av-3-fg);
+  /* Group mode, social or study. Declared against the palette rather than
+     against the avatar tokens: the two used to share values, and a change
+     to the avatar row would silently restyle every mode badge. The badge
+     always spells its mode out, so colour is never the only thing carrying
+     it. */
+  --c-mode-social-bg: var(--mist);
+  --c-mode-social-fg: var(--c-accent-dark);
+  --c-mode-study-bg: var(--sky-tint);
+  --c-mode-study-fg: var(--c-accent-dark);
 
   /* The stage projector is always dark, whatever the viewer's system theme,
      so these are pinned rather than mode-dependent. */
@@ -173,8 +195,15 @@
   );
 
   /* Type */
-  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Space Grotesk", var(--font-sans);
+  /* "Inter Variable" is the family @fontsource-variable/inter registers.
+     The plain "Inter" after it catches a locally installed static Inter. */
+  --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  /* The design uses one family. --font-display stays as a name so the
+     headings that reference it keep working, but it no longer points at
+     Space Grotesk, which appears nowhere in the Figma file and was never
+     loaded either. */
+  --font-display: var(--font-sans);
 
   --t-12: 12px;
   --t-13: 13px;
@@ -183,6 +212,7 @@
   --t-16: 16px;
   --t-17: 17px;
   --t-18: 18px;
+  --t-22: 22px;
   --t-26: 26px;
   --t-28: 28px;
   --t-30: 30px;
@@ -209,8 +239,10 @@
   --s-11: 32px;
   --s-12: 56px;
 
-  /* Radius */
-  --r-sm: 9px;
+  /* Radius. --r-xs and --r-sm are the Figma button and card values; the
+     frames use 8px on buttons and 10px on cards. */
+  --r-xs: 8px;
+  --r-sm: 10px;
   --r-md: 12px;
   --r-lg: 14px;
   --r-xl: 16px;
@@ -244,5 +276,10 @@
   :root {
     --c-on-accent: #00162e;
     --c-accent-dark: var(--ink);
+
+    /* Undo layer 3's light-mode crossing. Page #00162e, card #0a2748, so
+       the card stays the lighter of the two. */
+    --c-bg: var(--bg);
+    --c-surface: var(--surface);
   }
 }
