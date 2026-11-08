@@ -109,6 +109,16 @@ class GroupMemberRepository:
             raise RecordNotFoundError("Database did not return the created membership")
         return normalize_membership(rows[0])
 
+    def remove(self, group_id: str, student_id: str) -> None:
+        """Delete one membership. Used only to undo a half-finished join."""
+        execute(
+            self.client.table("group_members")
+            .delete()
+            .eq("group_id", group_id)
+            .eq("student_id", student_id),
+            "remove group membership",
+        )
+
     def respond_to_invitation(
         self,
         group_id: str,

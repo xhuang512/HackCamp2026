@@ -20,6 +20,7 @@ from app.repositories import RecordNotFoundError, RepositoryError
 from app.repositories.free_blocks import FreeBlockRepository
 from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
+from app.timezones import APPLICATION_TIMEZONE
 
 router = APIRouter(tags=["students"])
 logger = logging.getLogger(__name__)
@@ -69,6 +70,7 @@ def get_current_suggestion(
         group = _first_group_with_availability(
             upcoming,
             free_blocks.list_for_student(student.id),
+            by_group,
         )
     except NoSuggestionError:
         return NowResponse(gap=_next_gap(student), group=None)
@@ -95,6 +97,15 @@ def get_current_suggestion(
 def _actionable_for_member(group: dict[str, Any], membership: dict[str, Any]) -> bool:
     deadline = _invitation_deadline(group)
     now = datetime.now(timezone.utc)
+    # A meeting that has already ended is nothing to act on, even while its
+    # stored status still says confirmed or active.
+    ends = datetime.combine(
+        date.fromisoformat(str(group["on_date"])),
+        time.fromisoformat(_short_time(str(group["end_time"]))),
+        tzinfo=APPLICATION_TIMEZONE,
+    )
+    if now >= ends:
+        return False
     if str(group.get("status")) == "forming" and now >= deadline:
         return False
     return not (
@@ -138,8 +149,15 @@ def _next_gap(student: store.Student) -> GapOut | None:
 def _first_group_with_availability(
     groups: list[dict[str, Any]],
     blocks: list[dict[str, Any]],
+    memberships: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     for group in groups:
+        # A group the student has joined is theirs whatever their schedule
+        # says: "I'm free now" exists for a cancelled class, and an open
+        # group only has to overlap a gap, not fit inside one.
+        membership = (memberships or {}).get(str(group["id"]))
+        if membership is not None and membership.get("invitation_status") == "accepted":
+            return group
         group_date = date.fromisoformat(str(group["on_date"]))
         group_start = _short_time(str(group["start_time"]))
         group_end = _short_time(str(group["end_time"]))

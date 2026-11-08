@@ -13,6 +13,12 @@ COLUMNS = (
 
 SPOT_HIDDEN = "To be announced"
 
+# How long before the meeting a matched group stops taking answers. A
+# short-notice group (I'm free now) passes a lead of zero instead: its
+# invitations stay open until the meeting starts, which the database's
+# groups_invite_deadline_check (deadline <= start) still allows.
+INVITATION_LEAD = timedelta(minutes=10)
+
 
 class GroupRepository:
     def __init__(self, client: Any):
@@ -88,13 +94,16 @@ class GroupRepository:
         building_id: int,
         mode: str = "social",
         status: str = FORMING,
+        invitation_lead: timedelta = INVITATION_LEAD,
     ) -> dict[str, Any]:
+        if invitation_lead < timedelta(0):
+            raise ValueError("invitation lead cannot be negative")
         meeting_start = datetime.combine(
             on_date,
             start_time,
             tzinfo=APPLICATION_TIMEZONE,
         )
-        invite_expires_at = meeting_start - timedelta(minutes=10)
+        invite_expires_at = meeting_start - invitation_lead
         if invite_expires_at <= datetime.now(APPLICATION_TIMEZONE):
             raise RepositoryError(
                 "Cannot create a group after its invitation deadline"

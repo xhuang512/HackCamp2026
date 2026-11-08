@@ -17,6 +17,7 @@ from app import codes, store
 from app.auth import get_current_student_id, onboarded_user
 from app.constants import (
     CONFIRMED,
+    FORMING,
     MAX_GROUP_SIZE,
 )
 from app.db import get_db_client
@@ -46,7 +47,7 @@ from app.repositories import (
 from app.repositories.buildings import BuildingRepository
 from app.repositories.free_blocks import FreeBlockRepository
 from app.repositories.group_members import GroupMemberRepository
-from app.repositories.groups import GroupRepository
+from app.repositories.groups import INVITATION_LEAD, GroupRepository
 from app.repositories.students import StudentRepository
 from app.timezones import APPLICATION_TIMEZONE
 
@@ -56,6 +57,17 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 # covering this moment. Long enough to meet somebody, short enough that it
 # expires on its own during a demo.
 DEFAULT_NOW_MINUTES = 120
+
+# An "I'm free now" group starts this many minutes from now, and its
+# invitations stay open until it starts. That is the window other students
+# have to find it in GET /groups/open and join before the meeting begins.
+# A group cannot start at this exact minute: its invitation deadline would
+# already have passed, which both the repository and the database refuse.
+NOW_LEAD_MINUTES = 5
+
+# Shown instead of the building for a group that is still forming. The spot
+# is revealed only once three people have joined.
+FORMING_AREA = "Location shared once 3 people join"
 
 
 class GroupResponseUpdate(BaseModel):
@@ -124,16 +136,26 @@ def _respond(
                 # "Full" is different: GET /groups/open already showed this
                 # group to the caller, so the only new fact is that it filled
                 # up while they were deciding, which is worth telling them.
-                if state_for(group, group_members) != CONFIRMED:
-                    raise RecordNotFoundError(str(exc))
+                state = state_for(group, group_members)
                 if not _overlaps_a_gap(group, student):
                     raise RecordNotFoundError(str(exc))
-                if len(joined_members(group_members)) >= MAX_GROUP_SIZE:
-                    raise HTTPException(status_code=409, detail="That group is full.")
-                members.create_joined(group_id, student.id)
-                return GroupResponseUpdate(group_id=group_id, response=response)
+                if state == CONFIRMED:
+                    if len(joined_members(group_members)) >= MAX_GROUP_SIZE:
+                        raise HTTPException(status_code=409, detail="That group is full.")
+                    members.create_joined(group_id, student.id)
+                    return GroupResponseUpdate(group_id=group_id, response=response)
+                if state == FORMING and _forming_and_open(group, group_members):
+                    if len(live_members(group_members)) >= MAX_GROUP_SIZE:
+                        raise HTTPException(status_code=409, detail="That group is full.")
+                    _join_forming(members, group_id, student.id)
+                    return GroupResponseUpdate(group_id=group_id, response=response)
+                raise RecordNotFoundError(str(exc))
             except HTTPException:
                 raise
+            except InvitationConflictError as conflict:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail=str(conflict)
+                ) from conflict
             except RecordNotFoundError:
                 pass
             except RepositoryError as create_exc:
@@ -152,13 +174,52 @@ def _respond(
     return GroupResponseUpdate(group_id=group_id, response=response)
 
 
+def _forming_and_open(group: dict, group_members: list[dict]) -> bool:
+    """Can a student who was not invited join this forming group?
+
+    Only while its invitations are still open, and only when nobody is still
+    waiting on an invitation to it. That covers a group a student started
+    (the founder is its only member) and a matched group whose invitations
+    have all been answered, without letting a stranger take a seat that the
+    matcher is holding for somebody it invited.
+    """
+    deadline = datetime.fromisoformat(
+        str(group["invite_expires_at"]).replace("Z", "+00:00")
+    )
+    if datetime.now(timezone.utc) >= deadline:
+        return False
+    return not any(
+        member.get("invitation_status") == "invited" for member in group_members
+    )
+
+
+def _join_forming(members: GroupMemberRepository, group_id: str, student_id: str) -> None:
+    """Join a forming group through the same atomic path an invitee uses.
+
+    The membership is created as an invitation and accepted by the
+    respond_to_group_invitation RPC, which locks the group, re-checks its
+    status and deadline, and confirms it on the third acceptance in one
+    transaction. Inserting an accepted row directly would skip all three.
+    If the RPC refuses, the invitation row is removed again.
+    """
+    members.create_invited(group_id, (student_id,))
+    try:
+        members.respond_to_invitation(group_id, student_id, "joined")
+    except Exception:
+        try:
+            members.remove(group_id, student_id)
+        except RepositoryError:
+            pass
+        raise
+
+
 # ------------------------------------------------------------- open groups
 
 
 @router.get(
     "/open",
     response_model=list[OpenGroupOut],
-    summary="Confirmed groups in the caller's gaps with seats left",
+    summary="Groups in the caller's gaps that the caller can still join",
     description=(
         "No names and no exact spot. A student who has not joined sees the "
         "time, the general area and what the group shares."
@@ -190,9 +251,21 @@ def list_open_groups(
         out: list[OpenGroupOut] = []
         for group in candidates:
             group_members = by_group.get(str(group["id"]), [])
-            if state_for(group, group_members) != CONFIRMED:
+            state = state_for(group, group_members)
+            if state == CONFIRMED:
+                seats_left = MAX_GROUP_SIZE - len(joined_members(group_members))
+                # The general area, which for a confirmed group with seats
+                # left is the building name. AGENTS.md allows it before
+                # joining; what stays hidden is who is there.
+                area = groups.building_name(group.get("building_id"))
+            elif state == FORMING and _forming_and_open(group, group_members):
+                # Pending invitations would hold seats too, but an open
+                # forming group has none, so live members are the count.
+                seats_left = MAX_GROUP_SIZE - len(live_members(group_members))
+                # The spot stays hidden while a group is forming.
+                area = FORMING_AREA
+            else:
                 continue
-            seats_left = MAX_GROUP_SIZE - len(joined_members(group_members))
             if seats_left <= 0:
                 continue
             if not _overlaps_a_gap(group, student):
@@ -202,10 +275,7 @@ def list_open_groups(
                     id=str(group["id"]),
                     gap=gap_of(group),
                     mode=str(group.get("mode") or "social"),
-                    # The general area, which for a confirmed group with
-                    # seats left is the building name. AGENTS.md allows it
-                    # before joining; what stays hidden is who is there.
-                    area=groups.building_name(group.get("building_id")),
+                    area=area,
                     seats_left=seats_left,
                     shared=students.shared_signals(
                         [str(m["student_id"]) for m in live_members(group_members)]
@@ -267,7 +337,7 @@ def create_group(
             detail="Could not read buildings",
         ) from exc
 
-    on_date, start, end = _slot_for(student, now=body.now)
+    on_date, start, end, lead = _slot_for(student, now=body.now)
 
     created = None
     try:
@@ -277,6 +347,7 @@ def create_group(
             end_time=end,
             building_id=int(building["id"]),
             mode=body.mode,
+            invitation_lead=lead,
         )
         group_id = str(created["id"])
         members.create_joined(group_id, student.id)
@@ -294,33 +365,48 @@ def create_group(
     return group_out(client, groups.get(group_id), student.id)
 
 
-def _slot_for(student: store.Student, *, now: bool) -> tuple[date, time, time]:
-    """When the group meets.
+def _slot_for(
+    student: store.Student, *, now: bool
+) -> tuple[date, time, time, timedelta]:
+    """When the group meets, and how long before that its invitations close.
 
-    "I'm free now" starts at this minute and runs to the end of the free
-    block covering it, or DEFAULT_NOW_MINUTES when the student is not
-    supposed to be free at all. Someone whose class was cancelled is not
-    lying about being free, so this does not refuse them.
+    "I'm free now" starts NOW_LEAD_MINUTES from now and takes answers right
+    up to its start, so other students have that window to join. It runs to
+    the end of the free block covering its start, or DEFAULT_NOW_MINUTES
+    when the student is not supposed to be free at all. Someone whose class
+    was cancelled is not lying about being free, so this does not refuse
+    them.
+
+    Everything is Vancouver wall-clock time, the same clock the repository
+    and the database use for the invitation deadline.
     """
-    moment = datetime.now()
+    moment = datetime.now(APPLICATION_TIMEZONE)
     if now:
-        today = moment.date()
-        start = moment.time().replace(second=0, microsecond=0)
+        begins = (moment + timedelta(minutes=NOW_LEAD_MINUTES + 1)).replace(
+            second=0, microsecond=0
+        )
+        on_date = begins.date()
+        start = begins.time().replace(tzinfo=None)
         covering = [
             block_end
             for day, block_start, block_end in student.free_blocks
-            if day == today.weekday() and block_start <= start < block_end
+            if day == on_date.weekday() and block_start <= start < block_end
         ]
-        end = (
-            max(covering)
-            if covering
-            else (moment + timedelta(minutes=DEFAULT_NOW_MINUTES)).time().replace(
-                second=0, microsecond=0
+        if covering:
+            end = max(covering)
+        else:
+            finish = begins + timedelta(minutes=DEFAULT_NOW_MINUTES)
+            end = (
+                finish.time().replace(tzinfo=None)
+                if finish.date() == on_date
+                else time(23, 59)
             )
-        )
         if end <= start:
-            end = time(23, 59)
-        return today, start, end
+            raise HTTPException(
+                status_code=422,
+                detail="It is too late today to start a group now.",
+            )
+        return on_date, start, end, timedelta(0)
 
     if not student.free_blocks:
         raise HTTPException(
@@ -329,23 +415,23 @@ def _slot_for(student: store.Student, *, now: bool) -> tuple[date, time, time]:
         )
 
     today = moment.weekday()
-    current = moment.time()
+    # A gap whose invitations would already be closed is next week's.
+    cutoff = (moment + INVITATION_LEAD).time().replace(tzinfo=None)
 
-    def distance(block: tuple[int, time, time]) -> tuple[int, time]:
+    def days_until(block: tuple[int, time, time]) -> int:
         day, start, _end = block
         days = (day - today) % 7
-        if days == 0 and start <= current:
-            days = 7
-        return days, start
+        return 7 if days == 0 and start <= cutoff else days
 
-    day, start, end = min(student.free_blocks, key=distance)
-    days_ahead = (day - today) % 7
-    if days_ahead == 0 and start <= current:
-        days_ahead = 7
-    return moment.date() + timedelta(days=days_ahead), start, end
-
-
-# ------------------------------------------------------------- one group
+    day, start, end = min(
+        student.free_blocks, key=lambda block: (days_until(block), block[1])
+    )
+    return (
+        moment.date() + timedelta(days=days_until((day, start, end))),
+        start,
+        end,
+        INVITATION_LEAD,
+    )
 
 
 @router.get(
