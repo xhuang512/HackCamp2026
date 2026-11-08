@@ -48,16 +48,55 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--s-2);
+  gap: var(--s-1);
   text-decoration: none;
   color: var(--c-ink-3);
   font-size: var(--t-12);
   font-weight: var(--w-medium);
+  /* The pill below animates, so the label must not shift with it. */
+  padding-top: var(--s-1);
 }
 
+/* The pill sits behind the icon and fills in on the active tab. Sized here
+   rather than on the svg so the shape does not move when the icon does. */
+.tabbar__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: transparent;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.tabbar__label {
+  line-height: 1.2;
+}
+
+/* Three signals, not one: colour, weight and the filled pill. Colour alone
+   is not enough for anyone who cannot separate the accent from muted ink. */
 .tabbar__link.is-active {
   color: var(--c-accent);
   font-weight: var(--w-semibold);
+}
+
+.tabbar__link.is-active .tabbar__icon {
+  background: var(--c-accent-soft);
+}
+
+/* The bar is a control, so it answers a press even where hover does not
+   exist. Opacity rather than a background, because every soft token in the
+   palette resolves to --mist, so a tinted pressed state would be
+   indistinguishable from the active one. */
+.tabbar__link:active {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar__icon {
+    transition: none;
+  }
 }
 
 /* ---------- Screen header ---------- */

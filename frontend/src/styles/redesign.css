@@ -304,7 +304,10 @@
   position: relative;
   isolation: isolate;
   margin: var(--s-7) var(--gutter) 0;
-  height: 280px;
+  /* Was a flat 280px, which wasted half the screen on a modern phone. dvh
+     rather than vh so iOS Safari's collapsing toolbars do not leave a gap.
+     The cap keeps "Browse buildings" within reach on a tablet. */
+  height: clamp(280px, 56dvh, 620px);
   border-radius: var(--r-2xl);
   overflow: hidden;
   background: var(--c-sunken);
