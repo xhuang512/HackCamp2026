@@ -184,7 +184,7 @@ export default function MapPage() {
         <div className="map-sheet__body" id="place-list" hidden={!sheetOpen}>
           {places.length === 0 && !loading ? (
             <p className="row__meta">
-              Quiet on campus right now. Start a group from the Right now tab
+              Quiet on campus right now. Start a group from the Groups tab
               and yours will be the first one here.
             </p>
           ) : (
