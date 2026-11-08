@@ -13,6 +13,7 @@ import MapPage from './pages/MapPage.jsx'
 import Onboarding from './pages/Onboarding.jsx'
 import Projector from './pages/Projector.jsx'
 import RightNow from './pages/RightNow.jsx'
+import ScheduleEditor from './pages/ScheduleEditor.jsx'
 import Welcome from './pages/Welcome.jsx'
 
 /* The three-tab shell. One component per screen lives in src/pages/.
@@ -46,6 +47,21 @@ function TabShell({ paused, onResume, resuming }) {
   )
 }
 
+/* A screen reached from a tab rather than being one. No tab bar, because the
+   schedule editor holds unsaved edits and asks before dropping them: with the
+   bar on screen, three taps leave without ever reaching that question. Save
+   and Back are the way out. */
+function PlainShell() {
+  return (
+    <div className="app">
+      <main className="app__screen">
+        <Outlet />
+        <div className="spacer" />
+      </main>
+    </div>
+  )
+}
+
 function Tabs(props) {
   return (
     <Routes>
@@ -53,6 +69,9 @@ function Tabs(props) {
         <Route index element={<RightNow />} />
         <Route path="map" element={<MapPage />} />
         <Route path="me" element={<Me />} />
+      </Route>
+      <Route element={<PlainShell />}>
+        <Route path="me/schedule" element={<ScheduleEditor />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
