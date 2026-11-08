@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from io import BytesIO
 from types import SimpleNamespace
+from datetime import datetime
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 from fastapi.testclient import TestClient
@@ -399,8 +400,68 @@ class ScheduleApiTests(unittest.TestCase):
             [(1, "09:00", "10:00"), (3, "14:00", "16:00")],
         )
         self.assertEqual(len(other), 1)
+        self.assertEqual(
+            [
+                (day, start.isoformat(timespec="minutes"), end.isoformat(timespec="minutes"))
+                for day, start, end in store.get("s_current").free_blocks
+            ],
+            [(1, "09:00", "10:00"), (3, "14:00", "16:00")],
+        )
         self.assertEqual(self.database.tables["group_members"], memberships_before)
         self.assertEqual(matching.call_count, 2)
+
+    def test_saved_schedule_changes_the_gap_returned_by_now(self) -> None:
+        day = (datetime.now().weekday() + 1) % 7
+        self.database.tables["groups"] = []
+        self.database.tables["group_members"] = []
+        with patch("app.routers.schedule.run_matching"):
+            saved = self.client.put(
+                "/me/schedule",
+                headers=self.headers,
+                json={
+                    "free_blocks": [
+                        {"day": day, "start_time": "09:15", "end_time": "10:45"}
+                    ]
+                },
+            )
+
+        current = self.client.get("/me/now", headers=self.headers)
+
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(current.status_code, 200)
+        self.assertEqual(
+            current.json()["gap"],
+            {
+                "day": ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[day],
+                "start": "09:15",
+                "end": "10:45",
+            },
+        )
+
+    def test_store_failure_is_reported_and_matching_does_not_run(self) -> None:
+        with (
+            patch("app.routers.schedule.store.update", return_value=None),
+            patch("app.routers.schedule.run_matching") as matching,
+            self.assertLogs("app.routers.schedule", level="ERROR") as logs,
+        ):
+            response = self.client.put(
+                "/me/schedule",
+                headers=self.headers,
+                json={
+                    "free_blocks": [
+                        {"day": 2, "start_time": "11:00", "end_time": "12:30"}
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json()["detail"],
+            "The schedule saved incompletely; please try again",
+        )
+        self.assertIn("supabase_saved=true", logs.output[0])
+        self.assertIn("store_present=True", logs.output[0])
+        matching.assert_not_called()
 
     def test_confirm_schedule_rejects_overlap_without_changing_data(self) -> None:
         original = list(self.database.tables["free_blocks"])

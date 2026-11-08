@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from supabase import Client
 
+from app import store
 from app.auth import get_current_student_id
 from app.db import get_db_client
 from app.schedule_ai import (
@@ -261,6 +262,47 @@ def update_schedule(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not save the reviewed schedule",
         ) from exc
+
+    # Bridge while identity is split between store.py and Supabase. Remove
+    # this mirror when HANDOFF.md section 9 moves identity fully into Supabase.
+    memory_blocks: list[store.FreeBlock] = [
+        (
+            block.day,
+            parse_wall_time(block.start_time),
+            parse_wall_time(block.end_time),
+        )
+        for block in ordered
+    ]
+    try:
+        updated = store.update(student_id, free_blocks=memory_blocks)
+    except Exception as exc:
+        current = store.get(student_id)
+        logger.exception(
+            "Schedule stores diverged for %s: supabase_saved=true "
+            "supabase_block_count=%d store_present=%s store_block_count=%d",
+            student_id,
+            len(blocks),
+            current is not None,
+            0 if current is None else len(current.free_blocks),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The schedule saved incompletely; please try again",
+        ) from exc
+    if updated is None:
+        current = store.get(student_id)
+        logger.error(
+            "Schedule stores diverged for %s: supabase_saved=true "
+            "supabase_block_count=%d store_present=%s store_block_count=%d",
+            student_id,
+            len(blocks),
+            current is not None,
+            0 if current is None else len(current.free_blocks),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The schedule saved incompletely; please try again",
+        )
 
     for target_date in next_matching_dates({block.day for block in blocks}):
         try:
