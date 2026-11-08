@@ -91,7 +91,14 @@ export default function useAsync(fn, deps = [], { pollMs = 0 } = {}) {
         })
     }
 
-    const id = setInterval(tick, pollMs)
+    let timeoutId
+    const schedule = () => {
+      timeoutId = setTimeout(() => {
+        tick()
+        schedule()
+      }, pollMs)
+    }
+    schedule()
 
     /* Coming back to a tab should not wait out the rest of an interval. */
     const onVisible = () => {
@@ -100,7 +107,7 @@ export default function useAsync(fn, deps = [], { pollMs = 0 } = {}) {
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
-      clearInterval(id)
+      clearTimeout(timeoutId)
       document.removeEventListener('visibilitychange', onVisible)
       if (polling.current !== null) {
         polling.current.abort()

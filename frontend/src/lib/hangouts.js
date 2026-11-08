@@ -13,16 +13,22 @@
 /** The accessible name for one building. Carries no student names. */
 export function placeLabel(place) {
   const people = place.count === 1 ? '1 student' : `${place.count} students`
+  const groups = place.groupsMeeting === 0
+    ? ''
+    : place.groupsMeeting === 1
+      ? '1 group meeting here now'
+      : `${place.groupsMeeting} groups meeting here now`
   if (place.mine) {
-    return `${place.name}, where your group is meeting, ${people} free nearby`
+    return `${place.name}, where your group is meeting${groups ? `, ${groups}` : ''}, ${people} free nearby`
   }
-  return `${place.name}, ${people} free nearby`
+  return `${place.name}${groups ? `, ${groups}` : ''}, ${people} free nearby`
 }
 
 /** The short line under the place name in the sheet list. */
 export function placeMeta(place) {
   const people = place.count === 1 ? '1 student' : `${place.count} students`
-  return place.mine ? `Your group is here · ${people} free` : `${people} free nearby`
+  const groups = place.groupsMeeting === 0 ? '' : place.groupsMeeting === 1 ? '1 group meeting' : `${place.groupsMeeting} groups meeting`
+  return place.mine ? `Your group is here${groups ? ` · ${groups}` : ''} · ${people} free` : `${groups ? `${groups} · ` : ''}${people} free nearby`
 }
 
 /** GET /map into the pins the map and the sheet both draw.
@@ -41,6 +47,7 @@ export function placesFrom(map) {
     lat: building.lat,
     lng: building.lng,
     count: building.free_count,
+    groupsMeeting: building.groups_meeting ?? 0,
     mine: mine !== null && mine.slug === building.slug,
   }))
 
@@ -55,6 +62,7 @@ export function placesFrom(map) {
          they are in it. The three-student floor is about other people's
          buildings, not your own meeting spot. */
       count: mine.joined_count,
+      groupsMeeting: 1,
       mine: true,
     })
   }
