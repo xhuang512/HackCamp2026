@@ -19,6 +19,11 @@
 /* ---------- 1. UBC palette ---------- */
 
 :root {
+  /* Tells the browser which way to style its own widgets: scrollbars, the
+     select menu, and the time picker the schedule editor is built from.
+     Without it a phone set to dark paints black controls on a light page. */
+  color-scheme: light;
+
   --navy: #002145;
   --primary: #0055b7;
   --sky: #00a7e1;
@@ -45,30 +50,38 @@
   --on-live-tint: #6b4a00;
 }
 
-/* ---------- 2. Dark mode ---------- */
+/* ---------- 2. Dark mode ----------
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #00162e;
-    --surface: #0a2748;
-    --line: #1c3d63;
-    --ink: #e8f1fa;
-    --slate: #9fb3c8;
-    --primary: #4da3ff;
-    --mist: #0f3358;
+   Switched by data-theme on <html>, not by prefers-color-scheme. The choice
+   belongs to the app (src/lib/theme.js) and defaults to light, because the
+   Figma file is drawn in light only and a demo on four phones should not
+   look like four apps. index.html sets the attribute before first paint.
 
-    /* Added. Without these, --live-tint and --sky-tint stay pale and their
-       text drops to about 1:1 once --ink flips light. */
-    --live-tint: #3a2e10;
-    --sky-tint: #0a3a52;
-    --on-live-tint: var(--ink);
+   Every pairing below still has to clear 4.5:1, the same as it did when the
+   phone decided. Nothing about the contrast work changed, only the trigger. */
 
-    /* The Figma file has no dark mode, so these two are ours. Each is the
-       same hue as its light partner taken down to a dark surface, and both
-       clear 10:1 against --ink. */
-    --av-sky: #0a3a52;
-    --av-mint: #0c3d35;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #00162e;
+  --surface: #0a2748;
+  --line: #1c3d63;
+  --ink: #e8f1fa;
+  --slate: #9fb3c8;
+  --primary: #4da3ff;
+  --mist: #0f3358;
+
+  /* Added. Without these, --live-tint and --sky-tint stay pale and their
+     text drops to about 1:1 once --ink flips light. */
+  --live-tint: #3a2e10;
+  --sky-tint: #0a3a52;
+  --on-live-tint: var(--ink);
+
+  /* The Figma file has no dark mode, so these two are ours. Each is the
+     same hue as its light partner taken down to a dark surface, and both
+     clear 10:1 against --ink. */
+  --av-sky: #0a3a52;
+  --av-mint: #0c3d35;
 }
 
 /* ---------- 3. What components use ---------- */
@@ -272,14 +285,12 @@
      --c-accent-dark stays --navy, which is 1.25:1 on the dark --mist and
        takes avatars 1 and 3 and the map's spot label down with it. */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --c-on-accent: #00162e;
-    --c-accent-dark: var(--ink);
+:root[data-theme="dark"] {
+  --c-on-accent: #00162e;
+  --c-accent-dark: var(--ink);
 
-    /* Undo layer 3's light-mode crossing. Page #00162e, card #0a2748, so
-       the card stays the lighter of the two. */
-    --c-bg: var(--bg);
-    --c-surface: var(--surface);
-  }
+  /* Undo layer 3's light-mode crossing. Page #00162e, card #0a2748, so
+     the card stays the lighter of the two. */
+  --c-bg: var(--bg);
+  --c-surface: var(--surface);
 }

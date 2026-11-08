@@ -3,6 +3,8 @@ import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
 import { STUDENT_TAGS } from '../lib/presets.js'
+import { setTheme } from '../lib/theme.js'
+import useColorScheme from '../lib/useColorScheme.js'
 import ScreenHeader from '../components/ScreenHeader.jsx'
 import StateCard from '../components/StateCard.jsx'
 import Icon from '../components/Icon.jsx'
@@ -32,6 +34,10 @@ export default function Me() {
   const [pausing, setPausing] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [actionError, setActionError] = useState(null)
+  /* Not part of the profile. It is a per-phone preference, saved in
+     localStorage, so it never goes near PATCH /me and a student signing in
+     on a borrowed phone does not change how their own one looks. */
+  const scheme = useColorScheme()
 
   /* The canonical tag list, the same source onboarding reads. A second
      hardcoded list here is how the two drift until a saved tag stops
@@ -279,6 +285,20 @@ export default function Me() {
                 <option value="my_courses">People in my courses</option>
                 <option value="shared_tag">People with a shared tag</option>
               </select>
+            </label>
+
+            <label className="switch">
+              <span className="switch__text">
+                <span className="row__name">Dark mode</span>
+                <span className="row__meta">
+                  Saved on this phone. It does not follow your system setting.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={scheme === 'dark'}
+                onChange={(e) => setTheme(e.target.checked ? 'dark' : 'light')}
+              />
             </label>
 
             <div className="row">

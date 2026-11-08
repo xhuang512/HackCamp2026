@@ -1,28 +1,20 @@
-/* The viewer's colour scheme, in JavaScript.
+/* The app's colour scheme, in JavaScript.
 
-   CSS already handles this through prefers-color-scheme, but a tile URL is
-   built in JS and a media query cannot reach it. This hook is that bridge,
-   and nothing else should need it. */
+   CSS reads it off data-theme on <html>, but a Leaflet tile URL is built in
+   JS and a selector cannot reach it. This hook is that bridge, and nothing
+   else should need it.
 
-import { useCallback, useSyncExternalStore } from 'react'
+   It deliberately does NOT read prefers-color-scheme. The scheme is the
+   app's own choice now (src/lib/theme.js), so the map's tiles follow the
+   toggle on the Me tab rather than the phone, and a light app never ends up
+   with a dark basemap in the middle of it. */
 
-const QUERY = '(prefers-color-scheme: dark)'
-
-function subscribe(onChange) {
-  if (typeof window === 'undefined' || !window.matchMedia) return () => {}
-  const mq = window.matchMedia(QUERY)
-  mq.addEventListener('change', onChange)
-  return () => mq.removeEventListener('change', onChange)
-}
+import { useSyncExternalStore } from 'react'
+import { DEFAULT_THEME, readTheme, subscribeTheme } from './theme.js'
 
 /** @returns {'light' | 'dark'} */
 export default function useColorScheme() {
-  const snapshot = useCallback(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return 'light'
-    return window.matchMedia(QUERY).matches ? 'dark' : 'light'
-  }, [])
-
-  /* Server snapshot is 'light'. There is no SSR in production; this only
+  /* Server snapshot is the default. There is no SSR in production; this only
      keeps a renderToString smoke check from throwing. */
-  return useSyncExternalStore(subscribe, snapshot, () => 'light')
+  return useSyncExternalStore(subscribeTheme, readTheme, () => DEFAULT_THEME)
 }
