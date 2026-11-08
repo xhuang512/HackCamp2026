@@ -250,4 +250,178 @@ read endpoint), and every item under "Design without a feature".
 
 ---
 
-*Phases 2 to 4 are appended below once approved.*
+## Phases 2 to 4, what was built
+
+All seven items in the proposed order were approved and are done, on branch
+`feat/figma-design`. One commit each.
+
+| Commit | What |
+| --- | --- |
+| `c626166` | Tokens and fonts |
+| `893d35f` | Welcome |
+| `a2c7abd` | Right now |
+| `2e577cb` | Check-in, and the six-digit code |
+| `9c99544` | Map |
+| `89ec1d2` | Me and Settings |
+| `16ea145` | Onboarding |
+
+### Your three decisions, and what they became
+
+**Initials on open-group cards.** Built as proposed, then changed once the
+data said otherwise. The plan was anonymous circles before joining and real
+initials after. The "after" half shipped. The "before" half did not, because
+`OpenGroupOut` carries no joined count and `seats_left` cannot be turned into
+one without knowing the group's capacity, so a row of circles would have been
+an invented number. Seats left occupies that corner of the card instead. If
+`joined_count` is ever added to `OpenGroupOut`, the anonymous row becomes a
+small, honest addition.
+
+**The exact building before joining.** Dropped, as you asked. `area` fills
+that slot, which is what AGENTS.md allows and what the endpoint already
+returns.
+
+**The six-digit code.** Built. This is the one change in the whole pass that
+is not purely visual, and it needed a backend change, so the detail is below.
+
+**"9+ people".** Ignored as instructed. Nothing renders a group larger than
+`MAX_GROUP_SIZE`.
+
+**The projector.** Untouched, as instructed. It has no frame in the file
+either.
+
+### The six-digit check-in code
+
+The typed fallback used to be the entire QR payload,
+`hc1.<student_id>.<window>.<signature>`, about forty characters, behind a
+"Show typed code" disclosure. It is now six digits, printed in the open.
+
+What changed in `backend/app/codes.py`:
+
+- `issue()` returns `typed` beside `code`. **The QR payload is untouched** and
+  keeps its 64-bit signature, so scanning, which is the path that matters, is
+  exactly as strong as before.
+- The six digits are a separate HMAC over a different payload, not a slice of
+  that signature, so reading one form off a screen tells you nothing about the
+  other. A test asserts it.
+- `read_typed()` takes its candidate students explicitly, because six digits
+  name nobody. The route passes the group's own members, at most five people
+  over two windows. That list is both the search space and the reason a code
+  minted for one group cannot be spent in another.
+
+**The honest cost.** Six digits is about 20 bits where the QR payload has 64.
+Four things hold it up: the 30-second rotation, the requirement that the
+caller has already joined the group, the member-scoped match, and the
+two-window limit. Together those put a blind guess at roughly ten chances in a
+million for the 30 seconds a code stays current.
+
+**The gap that remains is request rate.** Nothing limits how fast
+`POST /groups/{id}/checkin` can be called. A short code wants a limiter in
+front of it, and that belongs in the deployment rather than in this pass. It
+is the first item in "For the backend owner" below.
+
+Four tests cover it: a spaced `482 716` checks a groupmate in, a genuine code
+from outside the group is refused, a wrong six digits is refused, and the
+typed form is not a substring of the signature.
+
+### Tokens, as built
+
+The palette needed no retokenising. Five changes closed the gap.
+
+| Change | Detail |
+| --- | --- |
+| **Inter loaded** | Through `@fontsource-variable/inter`, self-hosted. Vite splits it by unicode-range, so an English page pulls the 48 kB latin subset. |
+| **Page and card crossed** | Light mode only. Layer 4 puts it back for dark, because a raised card has to stay lighter than its page. |
+| `--av-sky`, `--av-mint` | `#97d4e9` and `#e0f5f1` as drawn. Dark partners `#0a3a52` and `#0c3d35` are ours; the file has no dark mode. |
+| `--r-xs: 8px`, `--r-sm: 10px`, `--t-22` | The frames' button radius, card radius and section heading. |
+| **Space Grotesk dropped** | It appears nowhere in the file and was never loaded either. |
+
+Two sizes were not added. The frame's 11px card timestamp renders at
+`--t-12`, because 12px is the floor the rest of the app keeps and 11px text on
+a phone is not worth the single pixel. The 31px and 25px headings render at
+`--t-30` and `--t-26`, which are imperceptibly different and already exist.
+
+Mode badges no longer borrow the avatar tokens. The two happened to share
+values, so editing the avatar row silently restyled every badge.
+
+### Two button fixes that reached past one screen
+
+`.btn--xl` forced `background: var(--c-ink)`, which beat `.btn--primary` on
+source order and made all four of its callsites near-black. Every frame draws
+the primary button in the accent, and all four callsites already said
+`btn--primary`, so deleting the override is what made them agree.
+
+Every button radius is now 8px. It was 12px on `.btn` and 14px on the two
+larger sizes.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `npm run lint` | Clean |
+| `npm run build` | Clean, Leaflet still split at 157.65 kB |
+| `npm run check:signup` | 17/17 |
+| `pytest` | 116 passed, 7 skipped |
+| Contrast, both modes | 15 pairs resolved out of the stylesheet, worst **4.89:1** |
+| Touch targets | **Zero** interactive elements under 44px on `/`, `/map` and `/me` |
+
+Every screen was compared at 390px against its frame screenshot in both
+modes. Light mode was checked by replaying the light declarations over the
+dark `@media` block, since the machine running this is in dark mode.
+
+The AGENTS.md demo check was **not** run end to end. It needs a backend, the
+shared Supabase project and two phones checking each other in. What is above
+is what a desk can verify.
+
+### What still differs from the design, and why
+
+| Difference | Why |
+| --- | --- |
+| **Product name.** Frames say "UBC Meet" or "Campus Café"; the app says "Hangout". | A product name is copy, not styling. The deployed domain is `ubcmeet.fit`, so this probably wants deciding, but it touches `index.html`, the meta tags and the manifest, not CSS. |
+| **"Continue with UBC email"** vs our "Continue as guest". | Which sign-in exists is behaviour. `docs/signup.md` has UBC-only email paused. |
+| **Tab labels.** "Groups · Map · My profile" vs "Right now · Map · Me". | Copy. One-line change in `TabBar.jsx` whenever you want it. |
+| **Screen title "Me"** vs "My profile". | Same call. |
+| **Map layout.** The frame is a block map inside a scrolling page with the building list below the fold; ours is a full-height non-scrolling map with a sheet over it. | Unpicking the `100dvh` shell, the bounded panning and the `invalidateSize` handling is a layout decision rather than a styling one. Your call. |
+| **Map tiles.** | The frame draws a stylised grid map that no tile source produces. Leaflet with CARTO stays. |
+| **Group descriptions, captains, badges, timetable view, recurring groups.** | Listed under "Design without a feature" above. Not built. |
+
+## For the designers
+
+Things the file would be better for having, roughly in order of how much they
+would help.
+
+1. **A projector frame.** It is Tier 1, it is the screen on stage behind the
+   pitch, and there is no drawing of it anywhere in the file.
+2. **Loading, empty and error states.** Every screen that loads data has all
+   three, and every one of them was styled from the surrounding screen rather
+   than from a frame. That is six screens of guesswork.
+3. **Dark mode.** Every frame is light. The app ships a full dark palette, and
+   the dark values for the two new avatar fills were invented here
+   (`#0a3a52` and `#0c3d35`) because the file had nothing to copy.
+4. **The forming group.** The design only ever draws a confirmed group with a
+   visible spot. The state a student sees most often early on is "waiting for
+   N more to confirm" with the location hidden, and it has no frame.
+5. **Onboarding at 390px.** The only source is a 460×620 wireframe, so the
+   four steps were extrapolated.
+6. **Chip padding.** The mode and filter chips are drawn 34 to 37px tall and
+   the two settings buttons 41px, all under the 44px floor the accessibility
+   track needs. Shipped at 44px by adding vertical padding, which leaves the
+   type size and pill shape exactly as drawn. Worth matching in the file so
+   the two do not drift.
+7. **Three rule conflicts**, repeated here because they are design decisions
+   rather than implementation ones: initials on cards a reader has not joined,
+   an exact building and room before joining, and the typed code as drawn.
+   The first two are not built; the third shipped in a different form.
+8. **No contrast changes were needed.** Not a request, a compliment. Every
+   colour pair in the file clears 4.5:1, which is rare.
+
+## For the backend owner
+
+New from this pass, on top of the thirteen items in
+`docs/integration-report.md`:
+
+1. **Rate limit `POST /groups/{id}/checkin`.** The typed code is six digits
+   now. Nothing throttles guesses, and that is the one mitigation the design
+   of the code itself cannot provide.
+2. **`OpenGroupOut` has no `joined_count`.** It blocks the attendee row the
+   8138:2 frame draws on every open-group card. `seats_left` alone cannot
+   stand in, because turning it into a count needs the group's capacity.
