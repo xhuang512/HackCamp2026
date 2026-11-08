@@ -72,11 +72,11 @@ export default function ScheduleEditor({
     setSaved(false)
   }
 
-  function addBlock() {
+  function addBlock(day = 0) {
     if (blocks.length >= MAX_BLOCKS) return
     setBlocks((current) => [
       ...current,
-      { day: 0, start_time: '12:00', end_time: '13:00' },
+      { day, start_time: '12:00', end_time: '13:00' },
     ])
     setSaved(false)
   }
@@ -199,7 +199,7 @@ export default function ScheduleEditor({
               <button
                 type="button"
                 className="btn btn--ghost"
-                onClick={addBlock}
+                onClick={() => addBlock(0)}
                 disabled={saving || blocks.length >= MAX_BLOCKS}
               >
                 Add block
@@ -207,55 +207,71 @@ export default function ScheduleEditor({
             </div>
 
             {blocks.length === 0 && <p className="row__meta">No free blocks selected.</p>}
-            <div className="schedule-blocks">
-              {blocks.map((block, index) => (
-                <div className="schedule-block" key={index}>
-                  <label>
-                    <span className="sr-only">Day</span>
-                    <select
-                      className="field__input"
-                      value={block.day}
-                      onChange={(event) => changeBlock(index, 'day', event.target.value)}
-                      disabled={saving}
-                    >
-                      {DAY_NAMES.map((day, dayIndex) => <option value={dayIndex} key={day}>{day}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span className="sr-only">Start time</span>
-                    <input
-                      className="field__input"
-                      type="time"
-                      value={block.start_time}
-                      onChange={(event) => changeBlock(index, 'start_time', event.target.value)}
-                      disabled={saving}
-                      required
-                    />
-                  </label>
-                  <span aria-hidden="true">–</span>
-                  <label>
-                    <span className="sr-only">End time</span>
-                    <input
-                      className="field__input"
-                      type="time"
-                      value={block.end_time}
-                      onChange={(event) => changeBlock(index, 'end_time', event.target.value)}
-                      disabled={saving}
-                      required
-                    />
-                  </label>
+
+            {/* Grouped by day, not a flat list with a day dropdown on every
+                row. A parsed timetable is a dozen blocks, and a dozen rows
+                each carrying their own day select is both longer to read and
+                wider than a phone: the day is a heading here, so a row is
+                two time fields and nothing else.
+
+                This also matches the markup .schedule-block is written for.
+                The flat version rendered five children into a flex row sized
+                for two time fields, which is why the rows overflowed. */}
+            {DAY_NAMES.map((dayName, dayIndex) => {
+              const forDay = blocks
+                .map((block, index) => ({ block, index }))
+                .filter(({ block }) => Number(block.day) === dayIndex)
+              if (forDay.length === 0) return null
+              return (
+                <div className="schedule-day" key={dayName}>
+                  <h3 className="schedule-day__name">{dayName}</h3>
+                  {forDay.map(({ block, index }) => (
+                    <div className="schedule-block" key={index}>
+                      <label>
+                        <span className="sr-only">{`${dayName} start time`}</span>
+                        <input
+                          className="field__input schedule-block__time"
+                          type="time"
+                          value={block.start_time}
+                          onChange={(event) => changeBlock(index, 'start_time', event.target.value)}
+                          disabled={saving}
+                          required
+                        />
+                      </label>
+                      <span className="schedule-block__to" aria-hidden="true">to</span>
+                      <label>
+                        <span className="sr-only">{`${dayName} end time`}</span>
+                        <input
+                          className="field__input schedule-block__time"
+                          type="time"
+                          value={block.end_time}
+                          onChange={(event) => changeBlock(index, 'end_time', event.target.value)}
+                          disabled={saving}
+                          required
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn--ghost schedule-block__remove"
+                        onClick={() => removeBlock(index)}
+                        disabled={saving}
+                      >
+                        <span className="sr-only">{`Remove the ${dayName} ${block.start_time} block`}</span>
+                        <span aria-hidden="true">Remove</span>
+                      </button>
+                    </div>
+                  ))}
                   <button
                     type="button"
-                    className="btn btn--ghost schedule-block__remove"
-                    onClick={() => removeBlock(index)}
-                    disabled={saving}
-                    aria-label={`Remove ${DAY_NAMES[block.day]} ${block.start_time} to ${block.end_time}`}
+                    className="btn btn--ghost schedule-day__add"
+                    onClick={() => addBlock(dayIndex)}
+                    disabled={saving || blocks.length >= MAX_BLOCKS}
                   >
-                    Remove
+                    Add a block on {dayName}
                   </button>
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
 
           <button
