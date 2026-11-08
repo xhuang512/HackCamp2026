@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.engine import GroupPlan, form_groups
 from app.repositories import RepositoryError
@@ -9,6 +10,9 @@ from app.repositories.free_blocks import FreeBlockRepository
 from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.students import StudentRepository
+
+APPLICATION_TIMEZONE = ZoneInfo("America/Vancouver")
+ACTIVE_INVITATION_STATUSES = {"invited", "accepted"}
 
 
 @dataclass(frozen=True)
@@ -35,7 +39,7 @@ def run_matching(
 ) -> MatchingResult:
     """Plan or persist simple groups for one calendar date.
 
-    Existing proposed/active memberships on the date are excluded, making
+    Existing active invitations and accepted memberships are excluded, making
     serial CLI reruns idempotent for already assigned students. Compatible
     existing groups are filled to five before new groups are formed.
     """
@@ -45,12 +49,21 @@ def run_matching(
     members = GroupMemberRepository(client)
 
     matchable_ids = [str(row["id"]) for row in students.list_matchable()]
-    existing_groups = groups.list_open_for_date(target_date)
+    existing_groups = groups.list_for_matching_date(target_date)
     existing_memberships = members.list_for_groups(
         [str(group["id"]) for group in existing_groups]
     )
+    now = datetime.now(APPLICATION_TIMEZONE)
+    assignment_group_ids = {
+        str(group["id"])
+        for group in existing_groups
+        if group.get("status") == "active" or _can_accept_invitations(group, now)
+    }
     assigned_ids = {
-        str(membership["student_id"]) for membership in existing_memberships
+        str(membership["student_id"])
+        for membership in existing_memberships
+        if str(membership["group_id"]) in assignment_group_ids
+        if membership["invitation_status"] in ACTIVE_INVITATION_STATUSES
     }
     available_ids = [
         student_id for student_id in matchable_ids if student_id not in assigned_ids
@@ -59,8 +72,11 @@ def run_matching(
         available_ids,
         day=target_date.weekday(),
     )
+    actionable_groups = [
+        group for group in existing_groups if _can_accept_invitations(group, now)
+    ]
     additions = _plan_existing_group_additions(
-        existing_groups,
+        actionable_groups,
         existing_memberships,
         blocks,
     )
@@ -70,9 +86,11 @@ def run_matching(
         for student_id in addition.student_ids
     }
     plans = tuple(
-        form_groups(
+        plan
+        for plan in form_groups(
             [row for row in blocks if str(row["student_id"]) not in added_ids]
         )
+        if _plan_deadline(target_date, plan.start_time) > now
     )
 
     if not persist or (not additions and not plans):
@@ -90,7 +108,7 @@ def run_matching(
     )
     filled_ids: list[str] = []
     for addition in additions:
-        members.create_pending(addition.group_id, addition.student_ids)
+        members.create_invited(addition.group_id, addition.student_ids)
         filled_ids.append(addition.group_id)
 
     created_ids: list[str] = []
@@ -106,7 +124,7 @@ def run_matching(
                 building_id=building_id,
             )
             group_id = str(created["id"])
-            members.create_pending(group_id, plan.student_ids)
+            members.create_invited(group_id, plan.student_ids)
             created_ids.append(group_id)
         except RepositoryError:
             if created is not None and "id" in created:
@@ -160,16 +178,21 @@ def _plan_existing_group_additions(
     for group in groups:
         group_id = str(group["id"])
         current = by_group.get(group_id, [])
-        # A declined group is left unchanged. Replacing skipped members needs a
-        # separate lifecycle policy so it cannot accidentally reveal its spot.
-        if any(member["response"] == "skipped" for member in current):
-            continue
-        capacity = max_size - len(current)
+        active_members = [
+            member
+            for member in current
+            if member["invitation_status"] in ACTIVE_INVITATION_STATUSES
+        ]
+        capacity = max_size - len(active_members)
         if capacity <= 0:
             continue
+        historical_student_ids = {
+            str(member["student_id"]) for member in current
+        }
         compatible = sorted(
             student_id
             for student_id in remaining
+            if student_id not in historical_student_ids
             if _student_covers_group(student_id, group, blocks)
         )[:capacity]
         if not compatible:
@@ -192,3 +215,22 @@ def _student_covers_group(
         and time.fromisoformat(str(block["end_time"])) >= group_end
         for block in blocks
     )
+
+
+def _can_accept_invitations(group: dict[str, Any], now: datetime) -> bool:
+    if group.get("status") not in {"forming", "confirmed"}:
+        return False
+    deadline = datetime.fromisoformat(
+        str(group["invite_expires_at"]).replace("Z", "+00:00")
+    )
+    if deadline.tzinfo is None or deadline.utcoffset() is None:
+        raise RepositoryError("Database returned an invalid invitation deadline")
+    return deadline > now
+
+
+def _plan_deadline(target_date: date, start_time: time) -> datetime:
+    return datetime.combine(
+        target_date,
+        start_time,
+        tzinfo=APPLICATION_TIMEZONE,
+    ) - timedelta(minutes=10)

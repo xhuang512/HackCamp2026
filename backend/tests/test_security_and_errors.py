@@ -49,7 +49,7 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "waiting"})
 
     def test_skipped_student_gets_waiting_state(self) -> None:
-        self.database.tables["group_members"][0]["response"] = "skipped"
+        self.database.tables["group_members"][0]["invitation_status"] = "declined"
         token = create_guest_session("s_current")
 
         response = self.client.get(
@@ -88,11 +88,14 @@ class SecurityAndErrorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(
-            {row["student_id"]: row["response"] for row in self.database.tables["group_members"]},
-            {"s_current": "pending", "s_other": "joined"},
+            {
+                row["student_id"]: row["invitation_status"]
+                for row in self.database.tables["group_members"]
+            },
+            {"s_current": "invited", "s_other": "accepted"},
         )
 
-    def test_joined_student_can_see_group_first_names(self) -> None:
+    def test_joined_student_sees_names_but_spot_waits_for_confirmation(self) -> None:
         token = create_guest_session("s_current")
         headers = {"Authorization": f"Bearer {token}"}
         joined = self.client.post("/groups/g_41/join", headers=headers)
@@ -103,13 +106,15 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertEqual(suggestion.json()["group"]["members"], ["Maya", "Amir"])
         self.assertEqual(
             suggestion.json()["group"]["spot"],
-            {"building": "The Nest", "walk_min": 0},
+            {"building": "To be announced", "walk_min": 0},
         )
 
     def test_skipped_member_keeps_meeting_spot_private(self) -> None:
         for membership in self.database.tables["group_members"]:
-            membership["response"] = (
-                "joined" if membership["student_id"] == "s_current" else "skipped"
+            membership["invitation_status"] = (
+                "accepted"
+                if membership["student_id"] == "s_current"
+                else "declined"
             )
         token = create_guest_session("s_current")
 

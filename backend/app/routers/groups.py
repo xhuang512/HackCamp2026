@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
@@ -6,12 +7,23 @@ from supabase import Client
 
 from app.auth import get_current_student_id
 from app.db import get_db_client
-from app.repositories import RecordNotFoundError, RepositoryError
+from app.repositories import (
+    InvitationConflictError,
+    RecordNotFoundError,
+    RepositoryError,
+)
 from app.repositories.group_members import GroupMemberRepository
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 GroupResponse = Literal["pending", "joined", "skipped"]
+GroupLifecycleStatus = Literal[
+    "forming",
+    "confirmed",
+    "active",
+    "completed",
+    "dissolved",
+]
 
 
 class MeetingSpot(BaseModel):
@@ -25,6 +37,17 @@ class SuggestedGroup(BaseModel):
     shared: list[str] = Field(description="Short explanations for why the group matches")
     spot: MeetingSpot
     response: GroupResponse
+    status: GroupLifecycleStatus = Field(description="Current group lifecycle state")
+    accepted_count: int = Field(ge=0, description="Accepted invitation count")
+    minimum_required: int = Field(
+        default=3,
+        ge=3,
+        le=3,
+        description="Acceptances required to confirm the group",
+    )
+    invite_expires_at: datetime = Field(
+        description="Absolute deadline for accepting or declining this invitation"
+    )
 
 
 class GroupResponseUpdate(BaseModel):
@@ -71,9 +94,15 @@ def _update_response(
     response: Literal["joined", "skipped"],
 ) -> GroupResponseUpdate:
     try:
-        GroupMemberRepository(client).update_response(group_id, student_id, response)
+        GroupMemberRepository(client).respond_to_invitation(
+            group_id,
+            student_id,
+            response,
+        )
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvitationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RepositoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -13,6 +13,10 @@ class ReferenceDataError(RepositoryError):
     """Raised when onboarding references unknown catalog data."""
 
 
+class InvitationConflictError(RepositoryError):
+    """Raised when an invitation response violates lifecycle rules."""
+
+
 def execute(query: Any, operation: str) -> list[dict[str, Any]]:
     try:
         response = query.execute()

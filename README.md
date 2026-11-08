@@ -167,6 +167,74 @@ cd backend
 The backend uses the service-role key for privileged database access. Browser
 clients call FastAPI and do not receive that key.
 
+### Group lifecycle migration rollout
+
+Lifecycle V2 is the only schema supported by the backend. A fresh database must
+apply `backend/sql/001_core_schema.sql` followed by
+`backend/sql/002_group_lifecycle.sql` before the API starts accepting traffic.
+The second migration renames `group_members.response` to `invitation_status`,
+adds lifecycle timestamps and constraints, and installs the atomic
+`respond_to_group_invitation` RPC.
+
+For an existing V1 database, use a coordinated maintenance deployment:
+
+1. Back up the database and pause all API and matching writes.
+2. Verify that the live schema still has `groups_status_check`,
+   `group_members_response_check`, and `group_members.response` from migration
+   001. The migration is intended to run exactly once.
+3. Apply `backend/sql/002_group_lifecycle.sql` in Supabase.
+4. Deploy/restart this V2-only backend, then resume writes.
+
+Do not deploy this backend against a V1 database: it always queries
+`invitation_status` and calls `respond_to_group_invitation`. Likewise, do not
+resume an older backend after applying migration 002. The migration is not
+applied automatically by application startup and must first be exercised in a
+disposable or staging Supabase project.
+
+### Disposable lifecycle validation
+
+Lifecycle integration tests intentionally do not use `SUPABASE_URL` or
+`SUPABASE_SERVICE_KEY`. Create a new, empty Supabase project that can be deleted
+after testing, then export separately named test credentials in the current
+shell. Do not put these values in the repository or copy data from another
+project.
+
+```bash
+export LIFECYCLE_TEST_PROJECT_REF=<disposable-project-ref>
+export LIFECYCLE_TEST_DB_URL=<disposable-postgres-connection-string>
+export LIFECYCLE_TEST_SUPABASE_URL=<disposable-project-url>
+export LIFECYCLE_TEST_SERVICE_KEY=<disposable-service-role-key>
+export LIFECYCLE_TEST_ANON_KEY=<disposable-anon-key>
+export LIFECYCLE_TEST_CONFIRM_DISPOSABLE=YES_DELETE_TEST_DATA
+```
+
+Install the schema only after verifying that every value identifies the new
+project:
+
+```bash
+backend/scripts/setup_lifecycle_test_db.sh
+```
+
+The setup script refuses databases that already contain `public.students`,
+requires the project reference to appear in the connection string, and applies
+`001_core_schema.sql` followed by `002_group_lifecycle.sql` with PostgreSQL's
+stop-on-first-error behavior.
+
+Run the real Supabase lifecycle tests explicitly:
+
+```bash
+cd backend
+RUN_LIFECYCLE_V2_INTEGRATION=1 .venv/bin/python -m pytest \
+  tests/test_lifecycle_supabase_integration.py -v
+```
+
+The test suite also refuses to run when the test URL equals the normal
+development `SUPABASE_URL`, requires an empty students/groups dataset, uses a
+unique test prefix, and removes only rows created through its dedicated test
+building and prefix. It exercises automatic matching, lifecycle confirmation,
+privacy, idempotency, invalid and expired responses, anonymous RLS/RPC denial,
+and concurrent acceptances.
+
 ## Frontend API integration contract
 
 `POST /students` accepts a first name of at most 40 characters and returns a
@@ -189,7 +257,11 @@ now contain the persisted group's actual meeting date and interval:
     "members": [],
     "shared": ["STAT 302"],
     "spot": {"building": "To be announced", "walk_min": 0},
-    "response": "pending"
+    "response": "pending",
+    "status": "forming",
+    "accepted_count": 2,
+    "minimum_required": 3,
+    "invite_expires_at": "2026-11-10T13:05:00-08:00"
   }
 }
 ```
@@ -204,8 +276,10 @@ The frontend should treat this as a normal waiting state, not an error. Missing
 or invalid authentication remains HTTP 401. Database and Supabase failures remain
 HTTP 502 or 503. Validation failures remain HTTP 422.
 
-Names remain hidden until the requesting student joins, and the real meeting
-building remains hidden until every group membership has joined.
+Names remain hidden until the requesting student joins, and only accepted
+members' names are returned. The real meeting building is visible only to an
+accepted member after the group reaches three acceptances and becomes confirmed
+or active.
 
 ## Development Notes
 

@@ -1,8 +1,9 @@
--- Phase 1 group lifecycle migration.
+-- Group lifecycle V2 migration and atomic invitation-response RPC.
 --
 -- This migration is intentionally not executed by the application. Apply it in
--- a coordinated backend deployment after repositories and endpoints have been
--- updated to use invitation_status instead of response.
+-- a coordinated deployment before starting the V2-only backend. The application
+-- does not support the V1 response column or legacy group statuses after this
+-- migration is introduced.
 --
 -- Existing value mapping:
 --   groups.proposed  -> forming, confirmed, active, completed, or dissolved
@@ -155,6 +156,130 @@ alter table group_members
 create index group_members_active_invitation_idx
   on group_members (student_id, invitation_status)
   where invitation_status in ('invited', 'accepted');
+
+-- This is the only Phase 2 write path for invitation responses. Locking the
+-- group before its membership gives concurrent responses a consistent order,
+-- and the third acceptance confirms the group in the same transaction.
+create or replace function respond_to_group_invitation(
+  p_group_id uuid,
+  p_student_id uuid,
+  p_response text
+)
+returns table (
+  group_id uuid,
+  student_id uuid,
+  invitation_status text,
+  group_status text,
+  accepted_count bigint,
+  invite_expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  matched_group groups%rowtype;
+  membership group_members%rowtype;
+  accepted_total bigint;
+begin
+  if p_response not in ('accepted', 'declined') then
+    raise exception 'Invitation response must be accepted or declined'
+      using errcode = '22023';
+  end if;
+
+  select matched.*
+  into matched_group
+  from groups as matched
+  where matched.id = p_group_id
+  for update;
+
+  if not found then
+    raise exception 'Group invitation was not found'
+      using errcode = 'P0002';
+  end if;
+
+  select member.*
+  into membership
+  from group_members as member
+  where member.group_id = p_group_id
+    and member.student_id = p_student_id
+  for update;
+
+  if not found then
+    raise exception 'No membership exists for the current student and group'
+      using errcode = 'P0002';
+  end if;
+
+  -- A retry of an already committed response is safe even if the group has
+  -- since advanced or the deadline has passed.
+  if membership.invitation_status = p_response then
+    select count(*)
+    into accepted_total
+    from group_members as member
+    where member.group_id = p_group_id
+      and member.invitation_status = 'accepted';
+
+    return query
+      select matched_group.id,
+             membership.student_id,
+             membership.invitation_status,
+             matched_group.status,
+             accepted_total,
+             matched_group.invite_expires_at;
+    return;
+  end if;
+
+  if matched_group.status not in ('forming', 'confirmed') then
+    raise exception 'Invitations cannot change while the group is %', matched_group.status
+      using errcode = 'P0001';
+  end if;
+
+  if now() >= matched_group.invite_expires_at then
+    raise exception 'The invitation deadline has passed'
+      using errcode = 'P0001';
+  end if;
+
+  if membership.invitation_status <> 'invited' then
+    raise exception 'Cannot change an % invitation to %',
+      membership.invitation_status, p_response
+      using errcode = 'P0001';
+  end if;
+
+  update group_members as member
+  set invitation_status = p_response
+  where member.group_id = p_group_id
+    and member.student_id = p_student_id
+  returning member.* into membership;
+
+  select count(*)
+  into accepted_total
+  from group_members as member
+  where member.group_id = p_group_id
+    and member.invitation_status = 'accepted';
+
+  if matched_group.status = 'forming' and accepted_total >= 3 then
+    update groups as matched
+    set status = 'confirmed',
+        confirmed_at = coalesce(matched.confirmed_at, now()),
+        status_changed_at = now()
+    where matched.id = p_group_id
+    returning matched.* into matched_group;
+  end if;
+
+  return query
+    select matched_group.id,
+           membership.student_id,
+           membership.invitation_status,
+           matched_group.status,
+           accepted_total,
+           matched_group.invite_expires_at;
+end;
+$$;
+
+revoke all on function respond_to_group_invitation(uuid, uuid, text) from public;
+revoke all on function respond_to_group_invitation(uuid, uuid, text) from anon;
+revoke all on function respond_to_group_invitation(uuid, uuid, text) from authenticated;
+grant execute on function respond_to_group_invitation(uuid, uuid, text) to service_role;
 
 comment on column groups.invite_expires_at is
   'Absolute invitation deadline; new acceptances are rejected at or after this time.';
