@@ -88,6 +88,11 @@ GUEST_SESSION_SECRET=at-least-32-bytes
 CURRENT_TERM=2026W1
 DEMO_MODE=false
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+GOOGLE_CLOUD_GEMINI_API_KEY=your-google-cloud-gemini-api-key
+GEMINI_MODEL=gemini-3.8-flash
+SCHEDULE_MATCHING_DAYS=0,1,2,3,4
+SCHEDULE_MATCHING_WINDOW_START=09:00
+SCHEDULE_MATCHING_WINDOW_END=18:00
 ```
 
 `CORS_ORIGINS` is a comma-separated list of exact origins. For LAN phone testing,
@@ -306,6 +311,106 @@ Names remain hidden until the requesting student joins, and only accepted
 members' names are returned. The real meeting building is visible only to an
 accepted member after the group reaches three acceptances and becomes confirmed
 or active.
+
+### Schedule screenshot import
+
+`POST /schedule/parse` accepts an authenticated multipart PNG, JPEG, or WebP
+calendar screenshot up to 10 MB. The backend validates the actual image bytes
+and dimensions, sends the bytes directly to Google Cloud Gemini, and
+returns strictly validated timed events, separate all-day events, warnings, and
+suggested free blocks. Images and parsed timetables are not stored, and this
+endpoint never triggers matching.
+
+Configure the backend-only Google Cloud Gemini key and model:
+
+```dotenv
+GOOGLE_CLOUD_GEMINI_API_KEY=your-google-cloud-gemini-api-key
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+The Gemini adapter uses Google Cloud's Gemini Enterprise Agent Platform through
+`aiplatform.googleapis.com/v1`, not the Google AI Studio
+`generativelanguage.googleapis.com` endpoint. Configure the key through
+`GOOGLE_CLOUD_GEMINI_API_KEY`. A standard Google Cloud key must be bound to a
+service account whose project role includes `aiplatform.endpoints.predict`.
+Google's quickstart recommends Agent Platform User (`roles/aiplatform.user`);
+the standard-key setup guide uses Agent Platform Express User
+(`roles/aiplatform.expressUser`) for the key's bound service account. A key
+created directly through Agent Platform express mode does not require that
+additional IAM grant.
+
+`GEMINI_MODEL` defaults to `gemini-3.8-flash`. The Gemini key must never be
+placed in `VITE_*` settings.
+
+The default suggestion window is weekdays from
+09:00 through 18:00 in `America/Vancouver`; override it with
+`SCHEDULE_MATCHING_DAYS`, `SCHEDULE_MATCHING_WINDOW_START`, and
+`SCHEDULE_MATCHING_WINDOW_END`. Day numbers use Monday=0 through Sunday=6.
+
+The parse response marks every calculated block as
+`"availability_status": "suggested_not_confirmed"`. A gap in visible calendar
+events is not proof of personal availability, and a one-week screenshot is not
+treated as a recurring schedule. The frontend must let the student review and
+edit the suggestions before saving them.
+
+With a guest session returned by `POST /students`:
+
+```bash
+curl -X POST http://localhost:8000/schedule/parse \
+  -H "Authorization: Bearer $SESSION_TOKEN" \
+  -F "image=@calendar.png;type=image/png"
+```
+
+Restart the FastAPI process after changing Gemini configuration so it reloads
+the environment.
+
+`PUT /me/schedule` persists only the authenticated student's reviewed blocks,
+replacing their prior availability and then attempting the existing automatic
+matching flow:
+
+```bash
+curl -X PUT http://localhost:8000/me/schedule \
+  -H "Authorization: Bearer $SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"free_blocks":[{"day":1,"start_time":"13:00","end_time":"15:00"}]}'
+```
+
+Schedule replacement does not cancel, decline, or alter existing invitations,
+and it never dissolves confirmed or active groups. The new blocks affect future
+matching attempts only. Cancellation and invitation reconciliation remain a
+separate lifecycle feature. Under the existing `/me/now` contract, a group whose
+meeting interval is no longer covered by the student's reviewed free blocks may
+stop being selected as the current suggestion even though its membership record
+is preserved; the frontend should warn users before removing availability that
+covers an outstanding invitation or accepted group.
+
+Confirmed blocks are stored in the existing weekly `free_blocks` format. The
+frontend should make that weekly meaning explicit at confirmation time; the
+parser itself never infers recurrence from a one-week screenshot.
+
+The persistence layer batches the new rows and attempts a compensating restore
+if insertion fails after deleting the old blocks. Because those are separate
+PostgREST requests, a process or network failure during the small gap cannot be
+fully transactional; a future database RPC can close that residual failure
+window without changing the API contract.
+
+### Optional real Gemini validation
+
+Mocked Gemini tests run in the ordinary suite. The live vision test is disabled
+unless `RUN_GEMINI_INTEGRATION=1` and does not connect to Supabase. It uses the
+reference screenshot at `~/Downloads/schedule_test.png`.
+
+Then run:
+
+```bash
+cd backend
+RUN_GEMINI_INTEGRATION=1 .venv/bin/python -m pytest \
+  tests/test_gemini_schedule_integration.py -v
+```
+
+The test loads the root `.env`, calls Google Cloud Gemini only after the explicit flag, and
+verifies the expected 13 timed events by weekday and start/end time. It performs
+no database writes.
 
 ## Development Notes
 

@@ -22,7 +22,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import auth, config
-from app.routers import admin, groups, identity, options, projector, students
+from app.routers import (
+    admin,
+    groups,
+    identity,
+    options,
+    projector,
+    schedule,
+    students,
+)
 # Aliased: the module is app/routers/map.py and a bare `map` here would
 # shadow the builtin for the rest of this file.
 from app.routers import map as map_router
@@ -112,6 +120,7 @@ app.add_middleware(
 # screen depends on having happened.
 app.include_router(identity.router)
 app.include_router(students.router)
+app.include_router(schedule.router)
 app.include_router(options.router)
 app.include_router(groups.router)
 app.include_router(map_router.router)

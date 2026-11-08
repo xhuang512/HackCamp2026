@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from app.repositories.base import execute
+from app.repositories.base import RepositoryError, execute
 
 
 @dataclass(frozen=True)
@@ -29,10 +29,52 @@ class FreeBlockRepository:
             }
             for block in blocks
         ]
+        if not payload:
+            return []
         return execute(
             self.client.table("free_blocks").insert(payload),
             "create student free blocks",
         )
+
+    def replace_for_student(
+        self,
+        student_id: str,
+        blocks: tuple[FreeBlockInput, ...],
+    ) -> list[dict[str, Any]]:
+        """Replace one student's blocks with compensating rollback on failure.
+
+        PostgREST does not provide a multi-request transaction. A batch insert is
+        atomic in PostgreSQL; if it fails after deletion, this method restores
+        the previously read rows before propagating the original error.
+        """
+        existing = tuple(
+            FreeBlockInput(
+                day=int(row["day"]),
+                start_time=str(row["start_time"])[:5],
+                end_time=str(row["end_time"])[:5],
+            )
+            for row in self.list_for_student(student_id)
+        )
+        execute(
+            self.client.table("free_blocks").delete().eq("student_id", student_id),
+            "delete existing student free blocks",
+        )
+        try:
+            return self.create_for_student(student_id, blocks)
+        except RepositoryError:
+            try:
+                execute(
+                    self.client.table("free_blocks")
+                    .delete()
+                    .eq("student_id", student_id),
+                    "clear failed student free-block replacement",
+                )
+                self.create_for_student(student_id, existing)
+            except RepositoryError as rollback_exc:
+                raise RepositoryError(
+                    "Student free-block replacement and rollback both failed"
+                ) from rollback_exc
+            raise
 
     def list_for_student(self, student_id: str) -> list[dict[str, Any]]:
         return execute(
