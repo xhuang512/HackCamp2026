@@ -35,6 +35,31 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json(), {"detail": "A guest session token is required"})
 
+    def test_authenticated_student_without_suggestion_gets_waiting_state(self) -> None:
+        self.database.tables["groups"] = []
+        self.database.tables["group_members"] = []
+        token = create_guest_session("s_current")
+
+        response = self.client.get(
+            "/me/now",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "waiting"})
+
+    def test_skipped_student_gets_waiting_state(self) -> None:
+        self.database.tables["group_members"][0]["response"] = "skipped"
+        token = create_guest_session("s_current")
+
+        response = self.client.get(
+            "/me/now",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "waiting"})
+
     def test_tampered_guest_session_is_rejected(self) -> None:
         token = create_guest_session("s_current")
         response = self.client.post(
