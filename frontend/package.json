@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "check:signup": "node signup-check.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:schedule": "node schedule-check.mjs"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.30.0",

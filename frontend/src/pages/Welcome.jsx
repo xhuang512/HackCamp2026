@@ -29,7 +29,7 @@ export default function Welcome() {
   return (
     <div className="welcome">
       <div className="welcome__top">
-        <span className="welcome__name">Hangout</span>
+        <span className="welcome__name">UBC Meet</span>
         {/* Decorative, so alt is empty: the headline underneath already says
             what the screen is. A described illustration would make a screen
             reader announce scenery before the one thing to do here. */}

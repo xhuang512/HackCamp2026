@@ -34,6 +34,7 @@ from ..models import (
     AhaOut,
     CreateStudentRequest,
     CreateStudentResponse,
+    FreeBlockOut,
     GapOut,
     MeResponse,
     PatchMeRequest,
@@ -56,6 +57,14 @@ def _student_out(student: store.Student) -> StudentOut:
         visibility=student.visibility,
         tags=student.tags,
         favourite_spots=student.favourite_spots,
+        free_blocks=[
+            FreeBlockOut(
+                day=day,
+                start_time=start.strftime("%H:%M"),
+                end_time=end.strftime("%H:%M"),
+            )
+            for day, start, end in sorted(student.free_blocks)
+        ],
     )
 
 

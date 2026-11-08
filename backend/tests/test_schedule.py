@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import unittest
-from datetime import time
+from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
+from datetime import datetime
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app import auth, config
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.gemini_schedule import (
@@ -21,7 +22,7 @@ from app.gemini_schedule import (
     get_schedule_parser,
     validate_schedule_image,
 )
-from app import store
+from app import auth, config, store
 from app.main import app
 from app.repositories.base import RepositoryError
 from app.repositories.free_blocks import FreeBlockRepository
@@ -279,7 +280,16 @@ class ScheduleApiTests(unittest.TestCase):
         self.parser.parse.assert_not_called()
 
     def test_parse_allows_verified_identity_before_onboarding(self) -> None:
-        self.parser.parse.return_value = ExtractedSchedule()
+        self.parser.parse.return_value = ExtractedSchedule(
+            timed_events=[
+                TimedScheduleEvent(
+                    weekday="mon",
+                    start_time="10:00",
+                    end_time="11:00",
+                    title="STAT 406",
+                )
+            ]
+        )
         app.dependency_overrides[auth.current_user] = lambda: auth.Caller(
             auth_sub="auth0|new-student",
             is_guest=False,
@@ -295,7 +305,16 @@ class ScheduleApiTests(unittest.TestCase):
         self.parser.parse.assert_called_once()
 
     def test_parse_allows_short_lived_demo_guest_during_onboarding(self) -> None:
-        self.parser.parse.return_value = ExtractedSchedule()
+        self.parser.parse.return_value = ExtractedSchedule(
+            timed_events=[
+                TimedScheduleEvent(
+                    weekday="mon",
+                    start_time="10:00",
+                    end_time="11:00",
+                    title="STAT 406",
+                )
+            ]
+        )
         with patch.object(config, "DEMO_MODE", True):
             session = self.client.post("/auth/guest-session")
             response = self.client.post(
@@ -309,6 +328,99 @@ class ScheduleApiTests(unittest.TestCase):
         self.assertEqual(session.status_code, 200)
         self.assertEqual(response.status_code, 200)
         self.parser.parse.assert_called_once()
+
+    def test_parse_is_unavailable_until_the_gemini_key_is_set(self) -> None:
+        """503, the "parsing is off" half of section 3's two parse failures.
+
+        The override from setUp is dropped so the real factory runs, and
+        load_dotenv is patched because schedule_ai now reads backend/.env.
+        Without that patch this test would pass on a laptop with no key and
+        fail on the machine that serves the demo, which is the one that
+        matters.
+        """
+        app.dependency_overrides.pop(get_configured_schedule_parser)
+
+        with (
+            patch("app.gemini_schedule.load_dotenv"),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            response = self.client.post(
+                "/schedule/parse",
+                headers=self.headers,
+                files={"image": ("calendar.png", png_bytes(), "image/png")},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.parser.parse.assert_not_called()
+
+    def test_parse_keeps_nothing_from_the_uploaded_image(self) -> None:
+        """The stated privacy promise: only parsed blocks come back.
+
+        AGENTS.md keeps a timetable private to its owner, and section 3 says
+        the screenshot reaches no disk and no table. So a successful parse
+        must leave every table and the profile store exactly as they were,
+        and the response must carry no handle to the image.
+        """
+        self.parser.parse.return_value = ExtractedSchedule(
+            timed_events=[
+                TimedScheduleEvent(
+                    weekday="mon",
+                    start_time="10:00",
+                    end_time="11:00",
+                    title="STAT 406",
+                )
+            ]
+        )
+        tables_before = deepcopy(self.database.tables)
+        blocks_before = list(store.get("s_current").free_blocks)
+        files_before = set(Path.cwd().rglob("*.png")) | set(Path.cwd().rglob("*.jpg"))
+
+        response = self.client.post(
+            "/schedule/parse",
+            headers=self.headers,
+            files={"image": ("calendar.png", png_bytes(), "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.database.tables, tables_before)
+        self.assertEqual(store.get("s_current").free_blocks, blocks_before)
+        self.assertEqual(
+            set(Path.cwd().rglob("*.png")) | set(Path.cwd().rglob("*.jpg")),
+            files_before,
+        )
+        self.assertEqual(
+            set(response.json()),
+            {
+                "timed_events",
+                "all_day_events",
+                "warnings",
+                "suggested_free_blocks",
+                "matching_window",
+                "availability_status",
+            },
+        )
+        self.assertEqual(response.json()["availability_status"], "suggested_not_confirmed")
+
+    def test_parse_rejects_an_image_with_no_timetable_in_it(self) -> None:
+        """422, the other half. A readable picture that is not a timetable.
+
+        Returning 200 with an empty suggestion list would be the dangerous
+        answer, because the editor would then offer to replace a real
+        schedule with nothing and report that it worked.
+        """
+        self.parser.parse.return_value = ExtractedSchedule()
+
+        response = self.client.post(
+            "/schedule/parse",
+            headers=self.headers,
+            files={"image": ("cat.png", png_bytes(), "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json()["detail"],
+            "No timetable events were found in this image",
+        )
 
     def test_parse_returns_validated_events_and_unconfirmed_suggestions(self) -> None:
         self.parser.parse.return_value = ExtractedSchedule(
@@ -433,15 +545,68 @@ class ScheduleApiTests(unittest.TestCase):
             [(1, "09:00", "10:00"), (3, "14:00", "16:00")],
         )
         self.assertEqual(len(other), 1)
+        self.assertEqual(
+            [
+                (day, start.isoformat(timespec="minutes"), end.isoformat(timespec="minutes"))
+                for day, start, end in store.get("s_current").free_blocks
+            ],
+            [(1, "09:00", "10:00"), (3, "14:00", "16:00")],
+        )
         self.assertEqual(self.database.tables["group_members"], memberships_before)
         self.assertEqual(matching.call_count, 2)
+
+    def test_saved_schedule_changes_the_gap_returned_by_now(self) -> None:
+        day = (datetime.now().weekday() + 1) % 7
+        self.database.tables["groups"] = []
+        self.database.tables["group_members"] = []
+        with patch("app.routers.schedule.run_matching"):
+            saved = self.client.put(
+                "/me/schedule",
+                headers=self.headers,
+                json={
+                    "free_blocks": [
+                        {"day": day, "start_time": "09:15", "end_time": "10:45"}
+                    ]
+                },
+            )
+
+        current = self.client.get("/me/now", headers=self.headers)
+
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(current.status_code, 200)
         self.assertEqual(
-            store.get("s_current").free_blocks,
-            [
-                (1, time(9, 0), time(10, 0)),
-                (3, time(14, 0), time(16, 0)),
-            ],
+            current.json()["gap"],
+            {
+                "day": ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[day],
+                "start": "09:15",
+                "end": "10:45",
+            },
         )
+
+    def test_store_failure_is_reported_and_matching_does_not_run(self) -> None:
+        with (
+            patch("app.routers.schedule.store.update", return_value=None),
+            patch("app.routers.schedule.run_matching") as matching,
+            self.assertLogs("app.routers.schedule", level="ERROR") as logs,
+        ):
+            response = self.client.put(
+                "/me/schedule",
+                headers=self.headers,
+                json={
+                    "free_blocks": [
+                        {"day": 2, "start_time": "11:00", "end_time": "12:30"}
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json()["detail"],
+            "The schedule saved incompletely; please try again",
+        )
+        self.assertIn("supabase_saved=true", logs.output[0])
+        self.assertIn("store_present=True", logs.output[0])
+        matching.assert_not_called()
 
     def test_confirm_schedule_rejects_overlap_without_changing_data(self) -> None:
         original = list(self.database.tables["free_blocks"])

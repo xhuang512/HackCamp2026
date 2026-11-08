@@ -406,7 +406,7 @@ export default function Onboarding({ onDone }) {
     <OnboardStep
       {...frame}
       title="Who can we match you with?"
-      helper="You can change this any time in the Me tab."
+      helper="You can change this any time in the My profile tab."
       nextLabel="Finish"
       onNext={() => advance()}
       error={submitError}

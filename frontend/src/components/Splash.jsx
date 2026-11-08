@@ -11,7 +11,7 @@
 export default function Splash({ label = 'Loading' }) {
   return (
     <div className="splash" role="status" aria-busy="true">
-      <span className="splash__name">Hangout</span>
+      <span className="splash__name">UBC Meet</span>
       <span className="splash__label">{label}</span>
     </div>
   )

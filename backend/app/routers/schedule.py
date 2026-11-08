@@ -208,6 +208,18 @@ async def parse_schedule(
             detail="Schedule parsing is temporarily unavailable; please try again",
         ) from exc
 
+    # Section 3 of docs/feature-plans.md asks for two distinguishable parse
+    # failures: 503 when parsing is switched off, and 422 when this image is
+    # not a timetable. A model that reads no events at all is the second case.
+    # It is not a 502, because nothing failed; the picture was wrong. Leaving
+    # it a 200 is worse than either, because the editor would then replace a
+    # real schedule with an empty one and call that success.
+    if not extraction.timed_events and not extraction.all_day_events:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="No timetable events were found in this image",
+        )
+
     suggestions = suggest_free_blocks(
         busy_intervals_from_extraction(extraction),
         window_start=matching_window.start_time,
@@ -265,20 +277,46 @@ def update_schedule(
             detail="Could not save the reviewed schedule",
         ) from exc
 
-    # Identity remains mirrored in the lightweight profile store on this
-    # integration branch. Keep its next-gap label in sync with the durable
-    # blocks the matcher now reads from Supabase.
-    store.update(
-        student_id,
-        free_blocks=[
-            (
-                block.day,
-                parse_wall_time(block.start_time),
-                parse_wall_time(block.end_time),
-            )
-            for block in ordered
-        ],
-    )
+    # Bridge while identity is split between store.py and Supabase. Remove
+    # this mirror when HANDOFF.md section 9 moves identity fully into Supabase.
+    memory_blocks: list[store.FreeBlock] = [
+        (
+            block.day,
+            parse_wall_time(block.start_time),
+            parse_wall_time(block.end_time),
+        )
+        for block in ordered
+    ]
+    try:
+        updated = store.update(student_id, free_blocks=memory_blocks)
+    except Exception as exc:
+        current = store.get(student_id)
+        logger.exception(
+            "Schedule stores diverged for %s: supabase_saved=true "
+            "supabase_block_count=%d store_present=%s store_block_count=%d",
+            student_id,
+            len(blocks),
+            current is not None,
+            0 if current is None else len(current.free_blocks),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The schedule saved incompletely; please try again",
+        ) from exc
+    if updated is None:
+        current = store.get(student_id)
+        logger.error(
+            "Schedule stores diverged for %s: supabase_saved=true "
+            "supabase_block_count=%d store_present=%s store_block_count=%d",
+            student_id,
+            len(blocks),
+            current is not None,
+            0 if current is None else len(current.free_blocks),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The schedule saved incompletely; please try again",
+        )
 
     for target_date in next_matching_dates({block.day for block in blocks}):
         try:

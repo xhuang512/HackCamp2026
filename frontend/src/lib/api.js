@@ -353,6 +353,7 @@ export async function parseSchedule(image, { signal } = {}) {
       warnings: ['Fixture mode does not inspect the selected image.'],
       suggested_free_blocks: [
         { day: 1, start_time: '13:00', end_time: '15:00' },
+        { day: 3, start_time: '09:30', end_time: '11:00' },
       ],
       matching_window: {
         timezone: 'America/Vancouver',

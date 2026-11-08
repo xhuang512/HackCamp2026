@@ -41,6 +41,19 @@ class FreeBlockIn(BaseModel):
         return self
 
 
+class FreeBlockOut(BaseModel):
+    """One free block, back to the student who owns it.
+
+    The field names and the "HH:MM" strings match PUT /me/schedule's request
+    body on purpose, so the schedule editor can send back what GET /me gave
+    it without translating between two shapes.
+    """
+
+    day: int = Field(ge=0, le=6, description="Monday=0 through Sunday=6")
+    start_time: str = Field(examples=["13:00"])
+    end_time: str = Field(examples=["15:00"])
+
+
 class StudentOut(BaseModel):
     """The student's own profile, to the student themselves. Nothing here is
     ever shown to anybody else: another student sees a first name inside a
@@ -49,6 +62,13 @@ class StudentOut(BaseModel):
     is_guest, tags and favourite_spots are the three fields docs/SIGNUP.md
     documents and GET /me was not sending. The Me tab needs all three: the
     guest label, the tag row, and the spots it lets a student edit.
+
+    free_blocks is the timetable, which AGENTS.md keeps private to its owner.
+    StudentOut is only ever returned to the caller it describes (GET /me,
+    PATCH /me, POST /me/paused), so this field must not be reused in any
+    response another student can read. The schedule editor needs it: without
+    it the editor opens empty, and saving would replace a schedule the
+    student never saw with whatever few blocks they just typed.
     """
 
     id: str
@@ -58,6 +78,7 @@ class StudentOut(BaseModel):
     visibility: Visibility
     tags: list[str] = Field(default_factory=list)
     favourite_spots: list[str] = Field(default_factory=list)
+    free_blocks: list[FreeBlockOut] = Field(default_factory=list)
 
 
 class BadgeProgress(BaseModel):

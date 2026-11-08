@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
@@ -52,6 +53,12 @@ export default function Me() {
   /* 'profile', 'settings' or 'timetable': the redesign's three screens. */
   const [view, setView] = useState('profile')
   const [blocks, setBlocks] = useState([])
+
+  /* Set by ScheduleEditor as it navigates back, so the confirmation lands on
+     this screen instead of flashing on the one being left. Read once per
+     arrival: it lives in the history entry, so it is gone on the next open
+     and there is no flag to clear. */
+  const savedBlocks = useLocation().state?.scheduleSaved ?? null
 
   /* The canonical tag list, the same source onboarding reads. A second
      hardcoded list here is how the two drift until a saved tag stops
@@ -356,6 +363,13 @@ export default function Me() {
               </ul>
             )}
           </section>
+
+          {savedBlocks !== null && (
+            <p className="inline-message" role="status">
+              Schedule saved. Right now will use your {savedBlocks} free{' '}
+              {savedBlocks === 1 ? 'block' : 'blocks'} from its next open.
+            </p>
+          )}
 
           <div className="rd-panel rd-panel--grey">
             <strong className="rd-panel__title">Private to you</strong>

@@ -35,7 +35,11 @@ from app.routers import (
 # shadow the builtin for the rest of this file.
 from app.routers import map as map_router
 
-ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+# backend/.env, not the repository root. parents[2] pointed at a file that
+# does not exist, so this load did nothing and the backend only found its
+# settings because config.py calls load_dotenv() from the working
+# directory. That made "it works" depend on being started from backend/.
+ROOT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 # uvicorn's own logger, because it is the one with a handler attached. A

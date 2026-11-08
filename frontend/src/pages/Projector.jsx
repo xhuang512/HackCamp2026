@@ -53,7 +53,7 @@ export default function Projector() {
 
   return (
     <div className="stage on-dark">
-      <span className="stage__label">Hangout, live at UBC</span>
+      <span className="stage__label">UBC Meet, live at UBC</span>
 
       {loading && <p className="stage__note">Connecting to the room…</p>}
       {error !== null && (

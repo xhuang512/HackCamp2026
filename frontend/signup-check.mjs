@@ -72,7 +72,7 @@ hasNot(welcome, 'Continue with Google', 'Google button hidden without Auth0')
 
 // 2. /projector is public: it renders with no session at all
 const projector = render('/projector', h(App))
-has(projector, 'Hangout, live at UBC', '/projector renders unsigned-in')
+has(projector, 'UBC Meet, live at UBC', '/projector renders unsigned-in')
 
 // 3. onboarding, as a signed-in student: four questions
 const asStudent = { ...EMPTY, status: 'authed', kind: 'auth0', sub: 'auth0|abc', logout: () => {} }
