@@ -20,6 +20,25 @@ import { useEffect } from 'react'
 const URL = import.meta.env.VITE_SUPABASE_URL
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+/* ---------- The polling fallback ----------
+
+   Until the realtime client above is wired up, screens that have to change
+   on their own refetch on a timer through useAsync's `pollMs`. The cadences
+   live here, next to the hook that will replace them, so switching to
+   realtime is one file rather than a hunt through the pages.
+
+   The projector is the fast one because a demo depends on it: AGENTS.md's
+   demo check has two phones checking each other in and the stage count going
+   up, and nobody wants to count to fifteen on stage. The map is slower
+   because building activity changes slowly and the map runs on a phone,
+   where every wakeup costs battery. */
+
+/** Stage screen on a laptop. Fast, mains powered, watched by a room. */
+export const PROJECTOR_POLL_MS = 5000
+
+/** Map on a student's phone. Slow enough to be cheap. */
+export const MAP_POLL_MS = 15000
+
 /** Both credentials present. False means the hook is offline by design. */
 export const liveReady = Boolean(URL && ANON_KEY)
 

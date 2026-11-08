@@ -1,13 +1,22 @@
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
+import { PROJECTOR_POLL_MS } from '../lib/live.js'
 
 /* The stage screen, on a laptop plugged into the projector.
 
    Nothing here is per-student. The counts are the only public numbers in the
-   app, and a count is not a name. */
+   app, and a count is not a name.
+
+   It refetches on a timer, because the demo turns on these numbers moving:
+   two phones check each other in and the checked-in count goes up while the
+   room watches. It used to fetch once per page load and then sit frozen,
+   which meant reloading the laptop by hand at the right second. useLive in
+   src/lib/live.js is where this goes once Supabase realtime is wired up. */
 
 export default function Projector() {
-  const { data, error, loading, reload } = useAsync(api.getProjector)
+  const { data, error, loading, stale, reload } = useAsync(api.getProjector, [], {
+    pollMs: PROJECTOR_POLL_MS,
+  })
 
   return (
     <div className="stage on-dark">
@@ -30,6 +39,13 @@ export default function Projector() {
             <span><strong>{data.confirmed}</strong> confirmed</span>
             <span><strong>{data.students}</strong> participating</span>
           </div>
+          {/* A failed refresh keeps the last good numbers rather than
+              blanking the stage, so it has to admit they are old. */}
+          {stale && (
+            <p className="stage__note" role="status">
+              Reconnecting. These numbers may be a moment behind.
+            </p>
+          )}
           {data.dots.length === 0 ? (
             <p className="stage__note">Groups will appear here as students join.</p>
           ) : (

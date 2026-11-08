@@ -1207,6 +1207,10 @@
   font-weight: var(--w-semibold);
 }
 
+.map-group-status__stale {
+  color: var(--c-ink-3);
+}
+
 /* ---------- Hangout pins ---------- */
 
 /* Set on an L.divIcon, so this is the whole marker. 44px clears the touch

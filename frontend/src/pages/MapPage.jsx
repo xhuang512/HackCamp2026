@@ -1,6 +1,7 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
+import { MAP_POLL_MS } from '../lib/live.js'
 import useColorScheme from '../lib/useColorScheme.js'
 import useMyLocation from '../lib/useMyLocation.js'
 import { CAMPUS_CENTER, OFF_CAMPUS_M, metresBetween } from '../lib/mapConfig.js'
@@ -69,7 +70,12 @@ function locationNotice(status, request) {
 export default function MapPage() {
   const { status, position, request } = useMyLocation()
   const scheme = useColorScheme()
-  const { data, error, loading, reload } = useAsync(api.getMap)
+  /* Polled so a groupmate's check-in reaches the map without a reload.
+     Slower than the projector: building activity moves slowly and this
+     one runs on a phone. */
+  const { data, error, loading, stale, reload } = useAsync(api.getMap, [], {
+    pollMs: MAP_POLL_MS,
+  })
   const [sheetOpen, setSheetOpen] = useState(false)
   const [focus, setFocus] = useState(null)
 
@@ -145,6 +151,9 @@ export default function MapPage() {
           {myGroup && (
             <p className="map-group-status" role="status">
               {myGroup.checked_in_count} of {myGroup.joined_count} checked in at {myGroup.name}
+              {/* The count is the thing being polled, so if a refresh fails
+                  the number beside it has to stop claiming to be current. */}
+              {stale && <span className="map-group-status__stale"> · reconnecting</span>}
             </p>
           )}
         </div>
