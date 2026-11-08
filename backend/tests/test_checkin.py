@@ -138,6 +138,10 @@ class CheckInApiTests(unittest.TestCase):
                 "checked_in_count": 2,
                 "my_state": "checked_in",
                 "counted": True,
+                # A first check-in earns the first badge, which is the
+                # response telling the screen what to celebrate. This
+                # assertion predates badges and compared the whole body.
+                "new_badges": [{"slug": "first_hello", "name": "First Hello"}],
             },
         )
         self.assertEqual(self._group()["status"], "active")

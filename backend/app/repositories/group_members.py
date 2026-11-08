@@ -55,6 +55,16 @@ class GroupMemberRepository:
             "read student group memberships",
         )
 
+    def list_for_students(self, student_ids: list[str]) -> list[dict[str, Any]]:
+        if not student_ids:
+            return []
+        return self._list(
+            self.client.table("group_members")
+            .select(self._select_columns())
+            .in_("student_id", student_ids),
+            "read students' group memberships",
+        )
+
     def list_for_group(self, group_id: str) -> list[dict[str, Any]]:
         return self._list(
             self.client.table("group_members")

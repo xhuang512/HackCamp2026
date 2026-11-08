@@ -145,7 +145,10 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertEqual(suggestion.status_code, 200)
         group = suggestion.json()["group"]
         self.assertEqual(group["state"], "confirmed")
-        self.assertEqual(sorted(group["members"]), ["Amir", "Maya", "Rosa"])
+        self.assertEqual(
+            sorted(member["first_name"] for member in group["members"]),
+            ["Amir", "Maya", "Rosa"],
+        )
         self.assertEqual(group["spot"]["building"], "The Nest")
 
     def test_forming_group_keeps_the_meeting_spot_private(self) -> None:
@@ -165,7 +168,10 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertEqual(suggestion.status_code, 200)
         group = suggestion.json()["group"]
         self.assertEqual(group["state"], "forming")
-        self.assertEqual(group["members"], ["Maya"])
+        self.assertEqual(
+            group["members"],
+            [{"first_name": "Maya", "top_badge": None}],
+        )
         self.assertIsNone(group["spot"])
 
     def test_an_invited_member_is_counted_but_not_named(self) -> None:
@@ -181,7 +187,10 @@ class SecurityAndErrorTests(unittest.TestCase):
         )
 
         group = suggestion.json()["group"]
-        self.assertEqual(group["members"], ["Maya"])
+        self.assertEqual(
+            group["members"],
+            [{"first_name": "Maya", "top_badge": None}],
+        )
         self.assertEqual(group["joined_count"], 1)
         self.assertNotIn("Amir", suggestion.text)
 

@@ -20,10 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from .. import auth, config, presets, store
+from ..badges import badges_for
 from ..db import get_db_client
 from ..matching import next_matching_dates, run_matching
 from ..repositories import ReferenceDataError, RepositoryError
 from ..repositories.free_blocks import FreeBlockInput, FreeBlockRepository
+from ..repositories.group_members import GroupMemberRepository
 from ..repositories.reference_data import normalize_course_codes
 from ..repositories.students import StudentRepository
 from ..models import (
@@ -113,7 +115,10 @@ def _spot_ids(client: Client, slugs: list[str]) -> list[int]:
     return [buildings[slug] for slug in slugs]
 
 @router.get("/me", response_model=MeResponse)
-def get_me(caller: Annotated[auth.Caller, Depends(auth.current_user)]) -> MeResponse:
+def get_me(
+    caller: Annotated[auth.Caller, Depends(auth.current_user)],
+    client: Annotated[Client, Depends(get_db_client)],
+) -> MeResponse:
     """Does the signed-in user have a profile?
 
     The route gate calls this on every app open, so it is the one request
@@ -126,7 +131,17 @@ def get_me(caller: Annotated[auth.Caller, Depends(auth.current_user)]) -> MeResp
     student = caller.student
     if student is None or not student.onboarded:
         return MeResponse(onboarded=False)
-    return MeResponse(onboarded=True, student=_student_out(student))
+    try:
+        badges = badges_for(
+            student.id,
+            GroupMemberRepository(client).list_for_student(student.id),
+        )
+    except RepositoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not load profile badges",
+        ) from exc
+    return MeResponse(onboarded=True, student=_student_out(student), badges=badges)
 
 @router.post("/students", response_model=CreateStudentResponse, status_code=201)
 def create_student(

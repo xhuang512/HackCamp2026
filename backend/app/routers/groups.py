@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from supabase import Client
 
 from app import codes, store
+from app.badges import badges_for, newly_earned_badges
 from app.auth import get_current_student_id, onboarded_user
 from app.constants import (
     CONFIRMED,
@@ -574,12 +575,15 @@ def post_checkin(
         )
 
     try:
-        result = GroupMemberRepository(client).check_in_pair(
+        memberships = GroupMemberRepository(client)
+        before_badges = badges_for(student_id, memberships.list_for_student(student_id))
+        result = memberships.check_in_pair(
             id,
             student_id,
             scanned_id,
             now.isoformat(),
         )
+        after_badges = badges_for(student_id, memberships.list_for_student(student_id))
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CheckInConflictError as exc:
@@ -595,6 +599,7 @@ def post_checkin(
         checked_in_count=int(result["checked_in_count"]),
         my_state="checked_in",
         counted=int(result["changed_count"]) > 0,
+        new_badges=newly_earned_badges(before_badges, after_badges),
     )
 
 

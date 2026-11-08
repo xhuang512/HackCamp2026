@@ -89,7 +89,13 @@ class LifecycleApiTests(unittest.TestCase):
         # needs is the same fact as minimum_required, counted down: two
         # joined of the three a group confirms at.
         self.assertEqual(group["needs"], 1)
-        self.assertEqual(group["members"], ["Maya", "Amir"])
+        self.assertEqual(
+            group["members"],
+            [
+                {"first_name": "Maya", "top_badge": None},
+                {"first_name": "Amir", "top_badge": None},
+            ],
+        )
         self.assertIsNone(group["spot"])
 
     def test_accepted_member_sees_location_after_confirmation(self) -> None:
@@ -102,7 +108,14 @@ class LifecycleApiTests(unittest.TestCase):
         self.assertEqual(group["state"], "confirmed")
         self.assertEqual(group["joined_count"], 3)
         self.assertEqual(group["needs"], 0)
-        self.assertEqual(group["members"], ["Maya", "Amir", "Rosa"])
+        self.assertEqual(
+            group["members"],
+            [
+                {"first_name": "Maya", "top_badge": None},
+                {"first_name": "Amir", "top_badge": None},
+                {"first_name": "Rosa", "top_badge": None},
+            ],
+        )
         self.assertEqual(group["spot"]["building"], "The Nest")
         # The walk time is a placeholder until the buildings have real
         # walking distances, so only the building is asserted.
