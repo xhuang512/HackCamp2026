@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from supabase import Client, create_client
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -50,3 +50,17 @@ def get_db_client() -> Client:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+
+def get_optional_db_client(request: Request) -> Client | None:
+    """The client, or None when Supabase is not configured.
+
+    For routes that must keep answering without the database, like GET /me,
+    which every app open waits on. It honours an override of get_db_client,
+    so tests that swap in a fake database swap it here too.
+    """
+    factory = request.app.dependency_overrides.get(get_db_client, get_db_client)
+    try:
+        return factory()
+    except HTTPException:
+        return None

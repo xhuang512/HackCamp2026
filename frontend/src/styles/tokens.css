@@ -1,0 +1,297 @@
+/* Every colour, font size and spacing value in the app.
+   Components reference these variables only, so a restyle is a one-file change.
+
+   Three layers, in order:
+     1. The UBC palette, exactly as supplied.
+     2. Its dark-mode overrides, exactly as supplied.
+     3. Derived tokens the components actually use, plus the handful of
+        additions needed to keep every text pairing at 4.5:1 in BOTH modes.
+
+   Layer 3 exists because the raw palette has five pairings that fail:
+     - white on --primary is 2.63:1 in dark mode    -> --c-on-accent
+     - --navy on dark --bg is 1.13:1                -> --c-accent-dark
+     - --ink on --live-tint is 1.05:1 in dark mode  -> dark --live-tint
+     - --sky as text on white is 2.76:1             -> fill only, never text
+     - --live as text on white is 1.85:1            -> fill only, never text
+   Components use the --c-* names below, never the raw palette, so those
+   traps are not reachable from a component. */
+
+/* ---------- 1. UBC palette ---------- */
+
+:root {
+  /* Tells the browser which way to style its own widgets: scrollbars, the
+     select menu, and the time picker the schedule editor is built from.
+     Without it a phone set to dark paints black controls on a light page. */
+  color-scheme: light;
+
+  --navy: #002145;
+  --primary: #0055b7;
+  --sky: #00a7e1;
+  --mist: #eaf4fb;
+  --live: #f5b335;
+  --live-tint: #fff4dc;
+  --ink: #0b1b2e;
+  --slate: #5b6b7f;
+  --line: #d9e2ec;
+  --surface: #f7fafc;
+  --bg: #ffffff;
+
+  /* Added: a pale sky for the third avatar. The palette has no light sky.
+     The Figma frames use #97d4e9 and #e0f5f1 for the avatar row; both are
+     adopted below as --av-sky and --av-mint. This paler value stays because
+     the map's "you are here" halo reads it. */
+  --sky-tint: #d6f0fb;
+
+  /* Added: the two avatar fills the Figma frames use, taken as drawn.
+     Against --navy they measure 9.90:1 and 14.19:1. */
+  --av-sky: #97d4e9;
+  --av-mint: #e0f5f1;
+  /* Added: dark amber text for the live-tint fill in light mode. */
+  --on-live-tint: #6b4a00;
+}
+
+/* ---------- 2. Dark mode ----------
+
+   Switched by data-theme on <html>, not by prefers-color-scheme. The choice
+   belongs to the app (src/lib/theme.js) and defaults to light, because the
+   Figma file is drawn in light only and a demo on four phones should not
+   look like four apps. index.html sets the attribute before first paint.
+
+   Every pairing below still has to clear 4.5:1, the same as it did when the
+   phone decided. Nothing about the contrast work changed, only the trigger. */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #00162e;
+  --surface: #0a2748;
+  --line: #1c3d63;
+  --ink: #e8f1fa;
+  --slate: #9fb3c8;
+  --primary: #4da3ff;
+  --mist: #0f3358;
+
+  /* Added. Without these, --live-tint and --sky-tint stay pale and their
+     text drops to about 1:1 once --ink flips light. */
+  --live-tint: #3a2e10;
+  --sky-tint: #0a3a52;
+  --on-live-tint: var(--ink);
+
+  /* The Figma file has no dark mode, so these two are ours. Each is the
+     same hue as its light partner taken down to a dark surface, and both
+     clear 10:1 against --ink. */
+  --av-sky: #0a3a52;
+  --av-mint: #0c3d35;
+}
+
+/* ---------- 3. What components use ---------- */
+
+:root {
+  /* Surfaces. In light mode the Figma frames put the tinted #f7fafc on the
+     page and plain white on the card, which is the opposite of what the raw
+     palette names suggest, so the two are crossed here rather than in the
+     palette above.
+
+     Dark mode does NOT cross them, and layer 4 puts it back. A raised card
+     has to be lighter than the page it sits on; crossing them in dark mode
+     would make every card darker than its background and the depth would
+     read backwards. */
+  --c-bg: var(--surface);
+  --c-surface: var(--bg);
+  --c-sunken: var(--mist);
+  --c-track: var(--mist);
+  --c-border: var(--line);
+  /* Control boundaries need 3:1, which --line does not reach. */
+  --c-border-strong: var(--slate);
+  --c-border-dashed: var(--slate);
+
+  /* Ink. The palette has two levels, so there is no third. */
+  --c-ink: var(--ink);
+  --c-ink-2: var(--ink);
+  --c-ink-3: var(--slate);
+
+  /* Accent */
+  --c-accent: var(--primary);
+  --c-accent-soft: var(--mist);
+  --c-accent-wash: var(--mist);
+  /* Text and icons that sit ON --c-accent. White fails in dark mode. */
+  --c-on-accent: #ffffff;
+  /* The deeper accent for hover and display type. --navy is unreadable on a
+     dark background, so dark mode trades it for plain ink. */
+  --c-accent-dark: var(--navy);
+
+  /* Attention. --live and --sky are fills only, never text: both fail 3:1 on
+     white. Put --c-on-live / --c-on-sky on top of them. */
+  --c-live: var(--live);
+  --c-live-soft: var(--live-tint);
+  --c-on-live: #0b1b2e;
+  --c-on-live-soft: var(--on-live-tint);
+  --c-sky: var(--sky);
+  --c-on-sky: #002145;
+
+  /* Avatar pairs, taken from the Figma avatar row: mist, sky, mint.
+     Measured against --c-accent-dark in both modes, worst pair 9.90:1. */
+  --c-av-1-bg: var(--mist);
+  --c-av-1-fg: var(--c-accent-dark);
+  --c-av-2-bg: var(--av-sky);
+  --c-av-2-fg: var(--c-accent-dark);
+  --c-av-3-bg: var(--av-mint);
+  --c-av-3-fg: var(--c-accent-dark);
+
+  /* Group mode, social or study. Declared against the palette rather than
+     against the avatar tokens: the two used to share values, and a change
+     to the avatar row would silently restyle every mode badge. The badge
+     always spells its mode out, so colour is never the only thing carrying
+     it. */
+  --c-mode-social-bg: var(--mist);
+  --c-mode-social-fg: var(--c-accent-dark);
+  --c-mode-study-bg: var(--sky-tint);
+  --c-mode-study-fg: var(--c-accent-dark);
+
+  /* The stage projector is always dark, whatever the viewer's system theme,
+     so these are pinned rather than mode-dependent. */
+  --c-stage-bg: #00162e;
+  --c-stage-surface: #0a2748;
+  --c-stage-ink: #e8f1fa;
+  --c-stage-ink-2: #9fb3c8;
+  --c-stage-accent: #4da3ff;
+  --c-stage-live: #f5b335;
+
+  /* Map fills. Inline SVG reads these directly. */
+  --c-map-ground: var(--mist);
+  --c-map-road: var(--bg);
+  --c-map-building: var(--line);
+
+  /* Map pins and the "you are here" dot.
+     Every one of these is a var() of a token that already flips with the
+     theme, so none of them needs a dark-mode override.
+
+     --c-pin-edge is the load-bearing one. A pin's FILL cannot be relied on
+     to separate it from the tiles underneath, which are arbitrary: the
+     social fill is only 2.4:1 against Positron's land and 2.4:1 against
+     Dark Matter's. The 2px edge does that job instead, and because it
+     tracks --c-ink it always opposes theme-matched tiles. Measured 11:1 to
+     17:1 against Positron and Dark Matter land, water and roads. */
+  --c-pin-edge: var(--c-ink);
+
+  /* Social and study pins. The two fills differ in hue but NOT reliably in
+     lightness (0.17 luminance apart in dark mode), so colour alone must
+     never be what tells them apart. Each pin carries its own glyph and its
+     own aria-label; the colour is reinforcement, not the signal. */
+  --c-pin-social: var(--c-accent);
+  --c-on-pin-social: var(--c-on-accent);
+  /* The warm accent, reused as a category colour. Nothing to do with the
+     "live" state: every pin on the map is live by definition. */
+  --c-pin-study: var(--c-live);
+  --c-on-pin-study: var(--c-on-live);
+
+  /* The student's own meeting building. Same rule as above: it carries its
+     own glyph, a map marker rather than the figures, and its own label, so
+     the colour is reinforcement and not the signal. */
+  --c-pin-mine: var(--c-live);
+  --c-on-pin-mine: var(--c-on-live);
+
+  --c-me-dot: var(--c-accent);
+  --c-me-edge: var(--c-ink);
+  --c-me-halo: var(--c-accent);
+
+  /* The bar the map header and buttons sit on. Solid, not translucent:
+     text over semi-transparent tiles has no guaranteed contrast ratio,
+     and the whole point of the accessibility track is not guessing. */
+  --c-map-scrim: var(--c-bg);
+
+  /* The real height of .tabbar: 2 top + 48 link + 4 bottom + inset, so 54px
+     plus the home indicator. This token is also the scroll clearance
+     .app__screen leaves, so it has to track the bar's padding and the link's
+     min-height or the page gains a gap or hides content behind the bar. */
+  --tabbar-h: calc(
+    48px + var(--s-1) + var(--s-2) + env(safe-area-inset-bottom)
+  );
+
+  /* Type */
+  /* "Inter Variable" is the family @fontsource-variable/inter registers.
+     The plain "Inter" after it catches a locally installed static Inter. */
+  --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  /* The design uses one family. --font-display stays as a name so the
+     headings that reference it keep working, but it no longer points at
+     Space Grotesk, which appears nowhere in the Figma file and was never
+     loaded either. */
+  --font-display: var(--font-sans);
+
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-14: 14px;
+  --t-15: 15px;
+  --t-16: 16px;
+  --t-17: 17px;
+  --t-18: 18px;
+  --t-22: 22px;
+  --t-26: 26px;
+  --t-28: 28px;
+  --t-30: 30px;
+  --t-44: 44px;
+  --t-48: 48px;
+  --t-hero: 132px;
+
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-semibold: 600;
+  --w-bold: 700;
+
+  /* Space */
+  --s-1: 2px;
+  --s-2: 4px;
+  --s-3: 8px;
+  --s-4: 10px;
+  --s-5: 12px;
+  --s-6: 14px;
+  --s-7: 16px;
+  --s-8: 18px;
+  --s-9: 20px;
+  --s-10: 24px;
+  --s-11: 32px;
+  --s-12: 56px;
+
+  /* Radius. --r-xs and --r-sm are the Figma button and card values; the
+     frames use 8px on buttons and 10px on cards. */
+  --r-xs: 8px;
+  --r-sm: 10px;
+  --r-md: 12px;
+  --r-lg: 14px;
+  --r-xl: 16px;
+  --r-2xl: 20px;
+  --r-3xl: 24px;
+  --r-pill: 999px;
+
+  /* Controls. 44px is the floor for anything tappable. */
+  --tap: 44px;
+  --tap-lg: 52px;
+  --tap-xl: 56px;
+
+  /* A shadow is invisible on a dark background, so cards also carry a
+     1px --c-border. In dark mode that border is what defines the card. */
+  --shadow-card: 0 1px 2px rgba(0, 33, 69, 0.06), 0 8px 24px rgba(0, 33, 69, 0.08);
+
+  /* Layout. The design is drawn at 390px wide. */
+  --screen-max: 430px;
+  --gutter: var(--s-9);
+}
+
+/* ---------- 4. Dark overrides for the derived tokens ----------
+   These live after layer 3 because that is where the tokens are declared;
+   an override inside the layer-2 block would be overwritten by it.
+   Without this block:
+     --c-on-accent stays white on the lighter dark-mode --primary (2.63:1)
+     --c-accent-dark stays --navy, which is 1.25:1 on the dark --mist and
+       takes avatars 1 and 3 and the map's spot label down with it. */
+
+:root[data-theme="dark"] {
+  --c-on-accent: #00162e;
+  --c-accent-dark: var(--ink);
+
+  /* Undo layer 3's light-mode crossing. Page #00162e, card #0a2748, so
+     the card stays the lighter of the two. */
+  --c-bg: var(--bg);
+  --c-surface: var(--surface);
+}

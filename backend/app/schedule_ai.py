@@ -8,7 +8,10 @@ from PIL import Image, UnidentifiedImageError
 
 from app.schedule import ExtractedSchedule
 
-ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+# backend/.env, not the repository root. Section 3 of docs/feature-plans.md
+# puts GOOGLE_CLOUD_GEMINI_API_KEY in the backend file only, and no .env
+# exists at the root, so parents[2] made this load nothing at all.
+ROOT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 SCHEDULE_EXTRACTION_PROMPT = """
 Read only the events visibly present in this calendar screenshot.

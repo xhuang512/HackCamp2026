@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app import codes
+from app import codes, store
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.main import app
@@ -86,12 +86,24 @@ class CheckInApiTests(unittest.TestCase):
         self.environment.start()
         self.now = datetime(2026, 11, 10, 13, 30, tzinfo=APPLICATION_TIMEZONE)
         self.database = FakeSupabase(self._tables())
+        store.reset()
+        for row in self.database.tables["students"]:
+            student_id = str(row["id"])
+            store.put(
+                store.Student(
+                    id=student_id,
+                    first_name=str(row["first_name"]),
+                    auth_sub=f"guest:{student_id}",
+                    is_guest=True,
+                )
+            )
         app.dependency_overrides[get_db_client] = lambda: self.database
         app.dependency_overrides[get_checkin_now] = lambda: self.now
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
+        store.reset()
         self.environment.stop()
 
     def test_code_generation_requires_authentication_and_accepted_membership(self) -> None:
@@ -126,6 +138,10 @@ class CheckInApiTests(unittest.TestCase):
                 "checked_in_count": 2,
                 "my_state": "checked_in",
                 "counted": True,
+                # A first check-in earns the first badge, which is the
+                # response telling the screen what to celebrate. This
+                # assertion predates badges and compared the whole body.
+                "new_badges": [{"slug": "community_host", "name": "Community Host"}],
             },
         )
         self.assertEqual(self._group()["status"], "active")
@@ -147,6 +163,37 @@ class CheckInApiTests(unittest.TestCase):
         self.assertFalse(second.json()["counted"])
         self.assertEqual(self._member("s_current")["arrived_at"], first_timestamp)
         self.assertEqual(self._member("s_other")["arrived_at"], first_timestamp)
+
+    def test_badges_are_awarded_once_per_verified_checkin(self) -> None:
+        first = self._scan("s_current", self._code("s_other"))
+        repeat = self._scan("s_current", self._code("s_other"))
+        # The presenter was checked in by the first scan, so scanning back
+        # changes nothing for them either.
+        reverse = self._scan("s_other", self._code("s_current"))
+
+        self.assertEqual(
+            [b["slug"] for b in first.json()["new_badges"]], ["community_host"]
+        )
+        self.assertEqual(repeat.json()["new_badges"], [])
+        self.assertEqual(reverse.json()["new_badges"], [])
+
+        me = self.client.get("/me", headers=self._headers("s_current")).json()
+        self.assertEqual(
+            [(b["slug"], b["earned"], b["progress"]) for b in me["badges"]],
+            [
+                ("community_host", True, {"current": 1, "target": 1}),
+                # The fixture group is a study group, so only that badge moves.
+                ("social_regular", False, {"current": 0, "target": 3}),
+                ("study_regular", False, {"current": 1, "target": 3}),
+                ("super_host", False, {"current": 1, "target": 5}),
+            ],
+        )
+
+    def test_me_has_locked_badges_before_any_checkin(self) -> None:
+        me = self.client.get("/me", headers=self._headers("s_current")).json()
+
+        self.assertEqual(len(me["badges"]), 4)
+        self.assertFalse(any(b["earned"] for b in me["badges"]))
 
     def test_invalid_self_wrong_group_and_unaccepted_codes_are_rejected(self) -> None:
         invalid = self._scan("s_current", "not-a-code")

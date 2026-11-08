@@ -18,9 +18,23 @@ class InvitationConflictError(RepositoryError):
 
 
 class CheckInConflictError(RepositoryError):
-    """Raised when meetup check-in violates lifecycle or membership rules."""
+    """Raised when meetup attendance cannot be recorded safely."""
 
 
+def database_error_code(error: BaseException) -> str | None:
+    """Return Postgres/PostgREST's code from a wrapped repository error.
+
+    RepositoryError deliberately gives routes a safe message, but a few
+    migration shims need to distinguish an old check constraint from a real
+    outage. The original APIError remains attached as ``__cause__``.
+    """
+    current: BaseException | None = error
+    while current is not None:
+        code = getattr(current, "code", None)
+        if code is not None:
+            return str(code)
+        current = current.__cause__
+    return None
 def execute(query: Any, operation: str) -> list[dict[str, Any]]:
     try:
         response = query.execute()

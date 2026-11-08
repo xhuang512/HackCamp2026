@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from app.engine import GroupPlan, form_groups
+from app.constants import MAX_GROUP_SIZE
+from app.engine import GroupPlan, form_groups, pick_spot
 from app.repositories import RepositoryError
 from app.repositories.buildings import BuildingRepository
 from app.repositories.free_blocks import FreeBlockRepository
@@ -102,8 +103,15 @@ def run_matching(
             already_assigned_students=len(assigned_ids),
         )
 
-    building_id = (
-        int(BuildingRepository(client).first_available()["id"]) if plans else None
+    buildings = BuildingRepository(client).list_all() if plans else []
+    if plans and not buildings:
+        raise RepositoryError("A valid building is required for a new group")
+    spots = (
+        students.list_spot_ids(
+            [student_id for plan in plans for student_id in plan.student_ids]
+        )
+        if plans
+        else {}
     )
     filled_ids: list[str] = []
     for addition in additions:
@@ -111,16 +119,18 @@ def run_matching(
         filled_ids.append(addition.group_id)
 
     created_ids: list[str] = []
-    for plan in plans:
-        if building_id is None:
-            raise RepositoryError("A valid building is required for a new group")
+    for index, plan in enumerate(plans):
         created: dict[str, Any] | None = None
         try:
             created = groups.create(
                 on_date=target_date,
                 start_time=plan.start_time,
                 end_time=plan.end_time,
-                building_id=building_id,
+                building_id=pick_spot(
+                    buildings,
+                    [spots.get(student_id, []) for student_id in plan.student_ids],
+                    spread=index,
+                ),
             )
             group_id = str(created["id"])
             members.create_invited(group_id, plan.student_ids)
@@ -164,7 +174,7 @@ def _plan_existing_group_additions(
     memberships: list[dict[str, Any]],
     blocks: list[dict[str, Any]],
     *,
-    max_size: int = 5,
+    max_size: int = MAX_GROUP_SIZE,
 ) -> tuple[GroupAddition, ...]:
     by_group: dict[str, list[dict[str, Any]]] = {
         str(group["id"]): [] for group in groups

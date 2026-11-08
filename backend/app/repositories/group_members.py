@@ -1,5 +1,6 @@
 from typing import Any, Literal
 
+from app.constants import CHECKED_IN, DECLINED, EXPIRED, INVITED, JOINED
 from app.repositories.base import (
     CheckInConflictError,
     InvitationConflictError,
@@ -24,6 +25,24 @@ _EXTERNAL_TO_INVITATION: dict[str, InvitationStatus] = {
 }
 
 
+def state_of(member: dict[str, Any]) -> str:
+    """Return the AGENTS.md member state, including derived check-in state."""
+    invitation = str(member.get("invitation_status") or "")
+    if not invitation:
+        invitation = {
+            "pending": INVITED,
+            "joined": "accepted",
+            "skipped": DECLINED,
+        }.get(str(member.get("response") or "pending"), INVITED)
+    if invitation == "accepted":
+        return CHECKED_IN if member.get("arrived_at") is not None else JOINED
+    if invitation == "declined":
+        return DECLINED
+    if invitation == "expired":
+        return EXPIRED
+    return INVITED
+
+
 class GroupMemberRepository:
     def __init__(self, client: Any):
         self.client = client
@@ -34,6 +53,16 @@ class GroupMemberRepository:
             .select(self._select_columns())
             .eq("student_id", student_id),
             "read student group memberships",
+        )
+
+    def list_for_students(self, student_ids: list[str]) -> list[dict[str, Any]]:
+        if not student_ids:
+            return []
+        return self._list(
+            self.client.table("group_members")
+            .select(self._select_columns())
+            .in_("student_id", student_ids),
+            "read students' group memberships",
         )
 
     def list_for_group(self, group_id: str) -> list[dict[str, Any]]:
@@ -73,6 +102,32 @@ class GroupMemberRepository:
             "create invited group memberships",
         )
         return [normalize_membership(row) for row in rows]
+
+    def create_joined(self, group_id: str, student_id: str) -> dict[str, Any]:
+        """Create an accepted membership for a founder or open-group join."""
+        rows = execute(
+            self.client.table("group_members").insert(
+                {
+                    "group_id": group_id,
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                }
+            ),
+            "create accepted group membership",
+        )
+        if not rows:
+            raise RecordNotFoundError("Database did not return the created membership")
+        return normalize_membership(rows[0])
+
+    def remove(self, group_id: str, student_id: str) -> None:
+        """Delete one membership. Used only to undo a half-finished join."""
+        execute(
+            self.client.table("group_members")
+            .delete()
+            .eq("group_id", group_id)
+            .eq("student_id", student_id),
+            "remove group membership",
+        )
 
     def respond_to_invitation(
         self,
@@ -145,6 +200,20 @@ class GroupMemberRepository:
             raise RecordNotFoundError("Group check-in returned no membership")
         return dict(rows[0])
 
+    def expire_invited(self, group_id: str, student_ids: tuple[str, ...]) -> int:
+        """Expire only invitations that are still unanswered."""
+        if not student_ids:
+            return 0
+        rows = execute(
+            self.client.table("group_members")
+            .update({"invitation_status": "expired"})
+            .eq("group_id", group_id)
+            .in_("student_id", list(student_ids))
+            .eq("invitation_status", "invited"),
+            "expire group invitations",
+        )
+        return len(rows)
+
     def _list(self, query: Any, operation: str) -> list[dict[str, Any]]:
         return [normalize_membership(row) for row in execute(query, operation)]
 
@@ -154,6 +223,7 @@ class GroupMemberRepository:
 
 
 def normalize_membership(row: dict[str, Any]) -> dict[str, Any]:
+    """Add the legacy wire `response` without changing durable storage names."""
     normalized = dict(row)
     invitation_status = normalized.get("invitation_status")
     response = normalized.get("response")

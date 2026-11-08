@@ -1,0 +1,19 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="350" height="226" viewBox="0 0 350 226" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Illustrated coastal landscape" clip-path="url(#clip0_0_4)">
+<path id="Vector" d="M332 0H18C8.05887 0 0 8.05887 0 18V208C0 217.941 8.05887 226 18 226H332C341.941 226 350 217.941 350 208V18C350 8.05887 341.941 0 332 0Z" fill="url(#paint0_linear_0_4)"/>
+<path id="Vector_2" d="M269 78C281.703 78 292 67.7025 292 55C292 42.2975 281.703 32 269 32C256.297 32 246 42.2975 246 55C246 67.7025 256.297 78 269 78Z" fill="#F5B335"/>
+<path id="Vector_3" d="M0 133L75 76L118 108L183 51L248 113L276 95L350 135V226H0V133Z" fill="#40B4E5"/>
+<path id="Vector_4" d="M0 154L53 131L104 144L158 124L215 153L297 130L350 148V226H0V154Z" fill="#0077C8"/>
+<path id="Vector_5" d="M0 163C60 147 122.667 152.333 188 179C253.333 205.667 307.333 208.333 350 187V226H0V163Z" fill="#97D4E9"/>
+<path id="Vector_6" d="M0 188C66 170 120.667 173.333 164 198C207.333 222.667 269.333 223.667 350 201V226H0V188Z" fill="#EAF4FB"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_4" x1="0" y1="0" x2="0" y2="226" gradientUnits="userSpaceOnUse">
+<stop stop-color="#97D4E9"/>
+<stop offset="1" stop-color="white"/>
+</linearGradient>
+<clipPath id="clip0_0_4">
+<rect width="350" height="226" fill="white"/>
+</clipPath>
+</defs>
+</svg>

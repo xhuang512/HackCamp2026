@@ -3,8 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- viewport-fit=cover lets the tab bar sit under the home indicator
+         and read env(safe-area-inset-bottom). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <!-- One value, rewritten by src/lib/theme.js, because the colour scheme
+         is the app's choice now and not the phone's. -->
+    <meta name="theme-color" content="#ffffff" />
+    <!-- Before first paint, on purpose. Reading the saved choice from React
+         would mean the app renders light for a frame and then flips, which
+         on a phone reads as a flash of the wrong app. Inline and tiny so it
+         costs nothing, and wrapped because storage throws in private mode.
+         Keep the key in step with THEME_KEY in src/lib/theme.js. -->
+    <script>
+      try {
+        var t = localStorage.getItem('hangout.theme')
+        if (t !== 'dark') t = 'light'
+        document.documentElement.setAttribute('data-theme', t)
+        if (t === 'dark') {
+          document.querySelector('meta[name="theme-color"]').content = '#00162e'
+        }
+      } catch (e) {}
+    </script>
+    <meta
+      name="description"
+      content="Find a small group of UBC students free in your next gap between classes, and a campus building to meet in."
+    />
+    <meta name="apple-mobile-web-app-title" content="UBC Meet" />
+    <title>UBC Meet</title>
   </head>
   <body>
     <div id="root"></div>

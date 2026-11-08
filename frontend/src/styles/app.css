@@ -1,0 +1,2019 @@
+/* Component classes. Every value comes from tokens.css. */
+
+/* ---------- Shell ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: var(--screen-max);
+  margin: 0 auto;
+  background: var(--c-bg);
+}
+
+.app__screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* Clear the fixed tab bar plus the home indicator. */
+  padding-bottom: var(--tabbar-h);
+}
+
+.app__screen--dark {
+  background: var(--c-stage-bg);
+  color: var(--c-stage-ink);
+  padding-bottom: 0;
+}
+
+/* ---------- Tab bar ---------- */
+
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: var(--screen-max);
+  margin: 0 auto;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-border);
+  /* Icons only, so the bar is as short as the touch floor allows. */
+  padding: var(--s-1) var(--s-3) calc(var(--s-2) + env(safe-area-inset-bottom));
+}
+
+.tabbar__link {
+  /* The whole cell is the target, so there is no small icon to aim at. */
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--c-ink-3);
+}
+
+/* Colour is reinforcement. The active tab is already a filled icon, which
+   is the signal that survives without colour vision. */
+.tabbar__link.is-active {
+  color: var(--c-accent);
+}
+
+.tabbar__link:active {
+  opacity: 0.6;
+}
+
+/* ---------- Screen header ---------- */
+
+.screen-head {
+  padding: var(--s-11) var(--gutter) 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.screen-head__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.screen-head__eyebrow {
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+.screen-head__title {
+  font-size: var(--t-28);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.screen-head__title--sm {
+  font-size: var(--t-26);
+}
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  min-height: var(--tap);
+  padding: 0 var(--s-7);
+  /* 8px on every button, which is what every frame in the design uses. */
+  border-radius: var(--r-xs);
+  border: none;
+  font-size: var(--t-14);
+  font-weight: var(--w-semibold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  text-decoration: none;
+}
+
+.btn--primary {
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+.btn--dark {
+  background: var(--c-ink);
+  color: var(--c-bg);
+}
+
+.btn--outline {
+  background: transparent;
+  border: 1.5px solid var(--c-ink);
+  color: var(--c-ink);
+  border-radius: var(--r-pill);
+}
+
+.btn--ghost {
+  background: var(--c-surface);
+  border: 1.5px solid var(--c-border-strong);
+  color: var(--c-ink);
+}
+
+.btn--lg {
+  min-height: var(--tap-lg);
+  font-size: var(--t-15);
+}
+
+/* --xl no longer sets its own colours. It used to force --c-ink, which beat
+   .btn--primary on source order and turned every one of its four callsites
+   into a near-black button; the design's primary is the accent at every
+   size. Each callsite already pairs --xl with --primary, so dropping the
+   override is what makes them agree. */
+.btn--xl {
+  min-height: var(--tap-xl);
+  font-size: var(--t-16);
+}
+
+.btn[aria-disabled="true"],
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Mode toggle ---------- */
+
+/* Two standalone pills, which is how the frames draw it. It used to be a
+   segmented control on a sunken track. */
+.mode-toggle {
+  margin: var(--s-5) var(--gutter) 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+/* The frame's chip is 34px tall. Padding takes it to the 44px floor the
+   accessibility track needs without changing the type size or the pill
+   shape, so it reads the same and is reachable with a thumb. */
+.mode-toggle__btn {
+  min-height: var(--tap);
+  padding: 0 var(--s-6);
+  border: none;
+  border-radius: var(--r-2xl);
+  background: var(--c-sunken);
+  color: var(--c-accent-dark);
+  font-size: var(--t-13);
+  font-weight: var(--w-bold);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.mode-toggle__btn[aria-pressed="true"] {
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+/* The tick is reinforcement only. aria-pressed is what actually announces
+   the state, so this is hidden from the accessibility tree. */
+.mode-toggle__tick {
+  font-size: var(--t-12);
+}
+
+/* ---------- Group card ---------- */
+
+/* Flat and bordered, 12px corners, 14px of padding. The frames carry no
+   shadow at all: on the tinted #f7fafc page the white fill and the 1px
+   --c-border already separate the card, and in dark mode the border is the
+   only thing that ever did. */
+.card {
+  margin: var(--s-5) var(--gutter) 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.card__label {
+  font-size: var(--t-12);
+  font-weight: var(--w-bold);
+  color: var(--c-accent);
+}
+
+.card__meta {
+  /* Pushes itself to the right edge, so the label and the mode badge stay
+     together on the left however many of them there are. */
+  margin-left: auto;
+  font-size: var(--t-12);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.card__actions {
+  margin-top: var(--s-2);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+
+.card__actions .btn:first-child {
+  grid-column: span 2;
+}
+
+/* ---------- Avatars ---------- */
+
+.members {
+  display: grid;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.member__name {
+  font-size: var(--t-14);
+  font-weight: var(--w-semibold);
+  color: var(--c-ink);
+}
+
+.member__badge {
+  margin-left: auto;
+  padding: 4px var(--s-4);
+  border-radius: var(--r-pill);
+  background: var(--c-accent-wash);
+  color: var(--c-accent-dark);
+  font-size: var(--t-12);
+  font-weight: var(--w-semibold);
+}
+
+
+/* 36px, down from 52px. The frames draw 30px in a list and a little more
+   on the group card; 36px is one size that reads right in both and still
+   fits five across at 390px. Not interactive, so the 44px floor does not
+   apply. */
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--w-bold);
+  font-size: var(--t-13);
+  flex-shrink: 0;
+}
+
+.avatar--1 { background: var(--c-av-1-bg); color: var(--c-av-1-fg); }
+.avatar--2 { background: var(--c-av-2-bg); color: var(--c-av-2-fg); }
+.avatar--3 { background: var(--c-av-3-bg); color: var(--c-av-3-fg); }
+
+.avatar--you {
+  background: var(--c-accent-dark);
+  color: var(--c-on-accent);
+}
+
+/* ---------- Shared tags ---------- */
+
+.shared {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.shared__label {
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag {
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-2xl);
+  background: var(--c-accent-wash);
+  color: var(--c-accent-dark);
+  font-size: var(--t-13);
+  font-weight: var(--w-bold);
+}
+
+/* ---------- Group mode badge ---------- */
+
+.mode-badge {
+  padding: 4px var(--s-4);
+  border-radius: var(--r-pill);
+  font-size: var(--t-12);
+  font-weight: var(--w-semibold);
+  white-space: nowrap;
+}
+
+.mode-badge--social {
+  background: var(--c-mode-social-bg);
+  color: var(--c-mode-social-fg);
+}
+
+.mode-badge--study {
+  background: var(--c-mode-study-bg);
+  color: var(--c-mode-study-fg);
+}
+
+/* ---------- Meeting spot ---------- */
+
+.spot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-6);
+  border-radius: var(--r-sm);
+  background: var(--c-sunken);
+}
+
+.spot__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.spot__name {
+  font-size: var(--t-15);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.spot__meta {
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+/* ---------- Dashed note ---------- */
+
+.note {
+  margin: var(--s-7) var(--gutter) 0;
+  padding: var(--s-6) var(--s-7);
+  border-radius: var(--r-lg);
+  border: 1.5px dashed var(--c-border-dashed);
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  font-size: var(--t-14);
+  color: var(--c-ink-2);
+}
+
+.note--sm {
+  font-size: var(--t-13);
+  padding: var(--s-5) var(--s-6);
+  border-radius: var(--r-md);
+}
+
+.note--dark {
+  border: none;
+  background: var(--c-stage-surface);
+  color: var(--c-stage-ink-2);
+  margin: 0;
+}
+
+/* ---------- Map ---------- */
+
+.map-frame {
+  margin: 0 var(--gutter);
+  height: 330px;
+  border-radius: var(--r-2xl);
+  overflow: hidden;
+  background: var(--c-map-ground);
+}
+
+.map-frame > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- Open groups and forms ---------- */
+
+.section {
+  padding: var(--s-9) var(--gutter) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.section__title {
+  font-size: var(--t-22);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.row {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: var(--s-6);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.row--button {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row--button:hover {
+  border-color: var(--c-border-strong);
+}
+
+.row--button:focus-visible {
+  outline: 3px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.row--button[aria-expanded='true'] {
+  border-color: var(--c-accent);
+}
+
+.row__action {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--c-accent-dark);
+  font-size: var(--t-13);
+  font-weight: var(--w-semibold);
+}
+
+.row__chevron {
+  min-width: 1ch;
+  font-size: var(--t-18);
+  text-align: center;
+}
+
+.row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.row__name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  font-size: var(--t-15);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.row__meta {
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+/* ---------- Timetable upload and review ---------- */
+
+.schedule-editor {
+  scroll-margin-top: var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  padding: var(--s-7);
+  background: var(--c-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.schedule-editor h4,
+.schedule-editor ul,
+.schedule-editor p {
+  margin-block: 0;
+}
+
+.schedule-summary,
+.schedule-events,
+.schedule-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.schedule-warnings {
+  padding: var(--s-5);
+  border-left: 4px solid var(--c-live);
+  border-radius: var(--r-sm);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+  font-size: var(--t-13);
+}
+
+.schedule-warnings ul {
+  padding-left: var(--s-7);
+  margin-top: var(--s-3);
+}
+
+.schedule-event-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.schedule-event-list li {
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-lg);
+  background: var(--c-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--t-13);
+}
+
+.schedule-event-list span {
+  color: var(--c-ink-3);
+}
+
+.schedule-review__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.schedule-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+/* The 390px stack for the review header. The .schedule-block rules that
+   used to sit here described a flat row with a day dropdown; the editors are
+   both grouped by day now, so the one rule set further down serves both. */
+@media (max-width: 430px) {
+  .schedule-review__head {
+    flex-direction: column;
+  }
+}
+
+.open-group,
+.start-card,
+.checkin-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+/* The frame's bottom row: the action on the left, the avatars pushed to the
+   right edge. */
+.open-group__foot {
+  margin-top: var(--s-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+}
+
+.open-group__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-5);
+  font-size: var(--t-12);
+  font-weight: var(--w-bold);
+}
+
+.open-group__mode {
+  color: var(--c-accent);
+}
+
+.open-group__when {
+  color: var(--c-accent-dark);
+  white-space: nowrap;
+}
+
+.open-group__name {
+  font-size: var(--t-16);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.open-group__meta {
+  font-size: var(--t-13);
+  font-weight: var(--w-medium);
+  color: var(--c-ink-3);
+  white-space: nowrap;
+}
+
+.start-card,
+.checkin-grid,
+.page-action {
+  margin: var(--s-9) var(--gutter) 0;
+}
+
+.start-form,
+.typed-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.waiting,
+.group-status,
+.inline-error,
+.inline-message {
+  margin: 0;
+  font-size: var(--t-14);
+}
+
+.waiting {
+  padding: var(--s-6);
+  border-radius: var(--r-lg);
+  background: var(--c-sunken);
+  color: var(--c-ink-2);
+}
+
+.group-status,
+.inline-message {
+  color: var(--c-ink-2);
+  font-weight: var(--w-medium);
+}
+
+.inline-error {
+  color: var(--c-on-live-soft);
+  border-left: 4px solid var(--c-live);
+  padding: var(--s-4) var(--s-5);
+  background: var(--c-live-soft);
+}
+
+.checkin-grid {
+  display: grid;
+  gap: var(--s-5);
+}
+
+/* The frame sits the QR on a tinted panel with a white plate behind the
+   code itself, which is what keeps a dark-mode phone scannable: a QR
+   inverted by a theme is a QR no camera reads. */
+.checkin-code__frame {
+  padding: var(--s-9);
+  border-radius: var(--r-sm);
+  background: var(--c-sunken);
+  display: flex;
+  justify-content: center;
+}
+
+.checkin-code {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  border-radius: var(--r-xs);
+  background: #ffffff;
+}
+
+.typed-code {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-5) var(--s-6);
+  background: var(--c-sunken);
+  border-radius: var(--r-sm);
+}
+
+.typed-code__label {
+  font-size: var(--t-12);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+/* Tabular figures, because the whole point of this number is that someone
+   reads it off a screen and types it on another phone. */
+.typed-code__value {
+  font-size: var(--t-28);
+  font-weight: var(--w-bold);
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-accent-dark);
+}
+
+/* The signed hc1 token is about 60 characters, not six digits, so it takes
+   the small size and wraps anywhere instead of overflowing the card. */
+.typed-code__value--token {
+  font-size: var(--t-13);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.copy-code {
+  margin-top: var(--s-4);
+}
+
+.scanner-video {
+  width: 100%;
+  min-height: 200px;
+  border-radius: var(--r-lg);
+  background: var(--c-ink);
+  object-fit: cover;
+}
+
+.page-action .btn,
+.me-logout {
+  width: 100%;
+}
+
+.settings-field {
+  padding: var(--s-6);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+}
+
+.me-logout {
+  margin: var(--s-9) var(--gutter) 0;
+  width: calc(100% - (2 * var(--gutter)));
+}
+
+/* ---------- Me ---------- */
+
+/* A filled tile, the way the frame draws the identity block, rather than a
+   bare row on the page. The outer margin matches .card so the two line up
+   down the screen. */
+.me-id {
+  margin: var(--s-5) var(--gutter) 0;
+  padding: var(--s-6);
+  border-radius: var(--r-sm);
+  background: var(--c-sunken);
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.me-id__edit {
+  /* Pushed to the trailing edge of the identity row, clear of the name and
+     the tag line. */
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.me-edit__actions {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.me-edit__actions .btn {
+  flex: 1;
+}
+
+.me-id__avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-pill);
+  background: var(--c-accent-dark);
+  color: var(--c-on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--t-26);
+  font-weight: var(--w-semibold);
+  flex-shrink: 0;
+}
+
+.me-count {
+  margin: var(--s-9) var(--gutter) 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-2xl);
+  padding: var(--s-9);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.me-count__n {
+  font-family: var(--font-display);
+  font-size: var(--t-48);
+  font-weight: var(--w-bold);
+  line-height: 1;
+  color: var(--c-accent);
+}
+
+.me-count__label {
+  font-size: var(--t-15);
+  color: var(--c-ink-2);
+}
+
+.achievements {
+  display: grid;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievement {
+  min-height: var(--tap-lg);
+  padding: var(--s-5) var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-accent-wash);
+  color: var(--c-accent-dark);
+}
+
+.achievement--locked {
+  background: var(--c-surface);
+  color: var(--c-ink-3);
+}
+
+.achievement__icon {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* The Campus Cat discs are 192px square with their own ring, so they take
+   no border or background from us. */
+.achievement__art {
+  width: 56px;
+  height: 56px;
+  display: block;
+}
+
+/* Locked: greyed out, and not only greyed out. Desaturating alone would
+   leave a locked badge looking like an earned one to anyone who cannot see
+   colour, so it also dims and the row still carries "2 of 3 hangouts". */
+.achievement--locked .achievement__art {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.achievement__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+/* A real checkbox, styled. The input stays the hit target. */
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  min-height: var(--tap);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: var(--s-6);
+  cursor: pointer;
+}
+
+.switch__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.switch input {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  accent-color: var(--c-accent);
+  cursor: pointer;
+}
+
+/* ---------- Loading, error, empty ---------- */
+
+.state {
+  margin: var(--s-9) var(--gutter) 0;
+  padding: var(--s-9);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  align-items: flex-start;
+}
+
+.state__title {
+  font-family: var(--font-display);
+  font-size: var(--t-18);
+  font-weight: var(--w-semibold);
+}
+
+.state__body {
+  font-size: var(--t-14);
+  color: var(--c-ink-2);
+  margin: 0;
+}
+
+.state__body code {
+  font-size: var(--t-13);
+  background: var(--c-sunken);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.spacer {
+  flex-grow: 1;
+}
+
+/* ---------- Added: map wrapper and stacked rows ---------- */
+
+.map-wrap {
+  margin-top: var(--s-5);
+}
+
+/* A list of .row cards. Resets the ul so rows sit flush. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- Added: signup, onboarding and the aha screen ----------
+   These four screens are the only ones outside the tab shell, so each
+   repeats .app's width cap and centring rather than nesting inside it. They
+   are also the only screens with a fixed bottom action, which is why they set
+   their own padding instead of .app__screen's tab-bar clearance. */
+
+.splash,
+.welcome,
+.onboard,
+.aha {
+  min-height: 100dvh;
+  max-width: var(--screen-max);
+  margin: 0 auto;
+  padding: var(--s-11) var(--gutter) calc(var(--s-11) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+}
+
+/* ---------- Splash ---------- */
+
+.splash {
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+}
+
+.splash__name {
+  font-family: var(--font-display);
+  font-size: var(--t-30);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+.splash__label {
+  font-size: var(--t-14);
+  color: var(--c-ink-3);
+}
+
+/* ---------- Welcome ---------- */
+
+.welcome {
+  gap: var(--s-5);
+  padding-top: var(--s-9);
+}
+
+.welcome__top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+/* Sentence case navy, not an uppercase accent eyebrow. In the frame the
+   product name is the first heading on the screen, not a label above one. */
+.welcome__name {
+  font-size: var(--t-26);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+/* Decorative, and the only image on the screen. Fixed aspect so the text
+   below it does not jump while the SVG decodes. */
+.welcome__art {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The SVG draws its own 18px corners, so no border-radius here. */
+  aspect-ratio: 350 / 226;
+}
+
+.welcome__pitch {
+  font-size: var(--t-30);
+  line-height: 1.15;
+  color: var(--c-accent-dark);
+}
+
+.welcome__sub {
+  margin: 0;
+  font-size: var(--t-16);
+  color: var(--c-ink);
+}
+
+/* margin-top: auto pins the actions to the bottom of the screen, which is
+   where the frame puts the single button. */
+.welcome__actions {
+  margin-top: auto;
+  padding-top: var(--s-9);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+/* An error needs more than red: red on white is the one pairing that fails
+   for a colour-blind reader with no other cue. The left rule and the bold
+   weight carry it, and the colour reinforces. */
+.welcome__error,
+.onboard__error {
+  margin: 0;
+  padding: var(--s-5) var(--s-6);
+  border-left: 4px solid var(--c-live);
+  border-radius: var(--r-sm);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+  font-size: var(--t-14);
+  font-weight: var(--w-medium);
+}
+
+.welcome__note {
+  margin: 0;
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+/* ---------- Onboarding ---------- */
+
+.onboard {
+  gap: var(--s-9);
+  padding-top: var(--s-7);
+}
+
+.onboard__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+}
+
+.onboard__back {
+  width: var(--tap);
+  height: var(--tap);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-pill);
+  color: var(--c-ink);
+}
+
+.onboard__progress {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--c-track);
+  overflow: hidden;
+}
+
+.onboard__progress-fill {
+  display: block;
+  block-size: 100%;
+  background: var(--c-accent);
+  transition: inline-size 180ms ease-out;
+}
+
+.onboard__count {
+  flex-shrink: 0;
+  font-size: var(--t-13);
+  font-weight: var(--w-semibold);
+  color: var(--c-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.onboard__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-7);
+  /* The one scrolling region. Step 3 is taller than a phone with the
+     language list open, and the Continue button must not scroll away. */
+  overflow-y: auto;
+}
+
+.onboard__title {
+  font-size: var(--t-26);
+  color: var(--c-accent-dark);
+}
+
+.onboard__helper {
+  margin: 0;
+  font-size: var(--t-15);
+  color: var(--c-ink-3);
+}
+
+.onboard__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.onboard-schedule-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.onboard-schedule-choice__or {
+  align-self: center;
+  color: var(--c-ink-3);
+  font-size: var(--t-13);
+  font-weight: var(--w-semibold);
+  text-transform: uppercase;
+}
+
+/* ---------- Fields ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+/* Bold navy, the way every field in the wireframes is labelled. It was
+   grey semibold, which read as secondary to the input under it. */
+.field__label,
+.choices legend.field__label {
+  font-size: var(--t-13);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+  padding: 0;
+}
+
+.field__input {
+  min-height: var(--tap-lg);
+  padding: 0 var(--s-6);
+  border: 1.5px solid var(--c-border-strong);
+  border-radius: var(--r-xs);
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: inherit;
+  /* 16px or more, or iOS Safari zooms the page on focus. */
+  font-size: var(--t-17);
+}
+
+.field__count {
+  align-self: flex-end;
+  font-size: var(--t-12);
+  color: var(--c-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Courses ---------- */
+
+.courses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.courses__helper {
+  margin: 0;
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+.courses__entry {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.courses__entry .field__input {
+  /* min-width:0 so a flex item with an intrinsic input width cannot push
+     the Add button off a 390px screen. */
+  flex: 1;
+  min-width: 0;
+}
+
+.courses__error {
+  /* Same treatment as .onboard__error, which is the app's one error look:
+     an amber rule and a tinted panel rather than red text, since the
+     palette has no danger colour and inventing one here would put the only
+     untested pair in the app on an error message. */
+  margin: 0;
+  padding: var(--s-4) var(--s-5);
+  border-left: 4px solid var(--c-live);
+  border-radius: var(--r-sm);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+  font-size: var(--t-13);
+}
+
+.chip--removable {
+  /* A chip that is a button carries the browser's default button font. */
+  font-family: inherit;
+}
+
+/* ---------- One-of-many and many-of-many ---------- */
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.choices:focus-visible {
+  outline-offset: 6px;
+}
+
+/* The real radio or checkbox stays in the layout and keeps the native focus
+   ring and keyboard behaviour. Only the box around it is restyled. */
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-5);
+  min-height: var(--tap-lg);
+  padding: var(--s-5) var(--s-6);
+  border: 1.5px solid var(--c-border-strong);
+  border-radius: var(--r-xs);
+  background: var(--c-bg);
+  cursor: pointer;
+}
+
+/* Selection is a 2.5px border and a tinted fill, not colour alone, so it
+   survives a greyscale screenshot and a colour-blind reader. */
+.choice--on {
+  border-width: 2.5px;
+  border-color: var(--c-accent);
+  background: var(--c-accent-wash);
+  padding: calc(var(--s-5) - 1px) calc(var(--s-6) - 1px);
+}
+
+.choice__input {
+  width: 22px;
+  height: 22px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--c-accent);
+  cursor: pointer;
+}
+
+.choice__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.choice__label {
+  font-size: var(--t-16);
+  font-weight: var(--w-semibold);
+  color: var(--c-ink);
+}
+
+.choice__blurb {
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+/* The frames draw an unselected chip as a tinted pill with no outline and
+   a selected one as a solid accent fill, rather than the same pill with a
+   thicker border. The real checkbox stays inside it, so selection is
+   announced and reachable by keyboard whatever the fill is doing. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--tap);
+  padding: 0 var(--s-6);
+  border: 1.5px solid transparent;
+  border-radius: var(--r-2xl);
+  background: var(--c-sunken);
+  font-size: var(--t-14);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+  cursor: pointer;
+}
+
+.chip--on {
+  border-color: var(--c-accent);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+/* The box itself must stay visible against a filled chip: accent-color
+   alone leaves a white tick on near-white in the unselected state. */
+.chip--on .choice__input {
+  accent-color: var(--c-on-accent);
+}
+
+/* The student-type tags are a vertical list, the languages a wrapped row, so
+   the chip works in both. */
+.chip .choice__input {
+  margin: 0;
+}
+
+/* ---------- Aha ---------- */
+
+.aha {
+  gap: var(--s-9);
+}
+
+.aha__top {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.aha__eyebrow {
+  font-size: var(--t-14);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+}
+
+.aha__number {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-hero);
+  font-weight: var(--w-bold);
+  line-height: 0.9;
+  color: var(--c-accent-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.aha__line {
+  font-size: var(--t-28);
+  color: var(--c-ink);
+}
+
+.aha__sub {
+  margin: 0;
+  font-size: var(--t-16);
+  color: var(--c-ink-3);
+}
+
+/* ---------- Paused banner ---------- */
+
+.banner {
+  margin: var(--s-7) var(--gutter) 0;
+  padding: var(--s-5) var(--s-6);
+  border-radius: var(--r-lg);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  font-size: var(--t-14);
+}
+
+.banner__text {
+  font-weight: var(--w-medium);
+}
+
+/* ---------- Projector ----------
+   Pinned dark whatever the viewer's system theme: it is a stage screen, and
+   a light flash in a dark hall is the one thing the room will notice. */
+
+.stage {
+  min-height: 100dvh;
+  padding: var(--s-12) var(--s-11);
+  background: var(--c-stage-bg);
+  color: var(--c-stage-ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-5);
+  text-align: center;
+}
+
+.stage__label {
+  font-size: var(--t-18);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-stage-accent);
+}
+
+.stage__number {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-hero);
+  font-weight: var(--w-bold);
+  line-height: 1;
+  color: var(--c-stage-live);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage__caption {
+  margin: 0;
+  font-size: var(--t-30);
+  color: var(--c-stage-ink);
+}
+
+.stage__note {
+  margin: 0;
+  font-size: var(--t-18);
+  color: var(--c-stage-ink-2);
+}
+
+.stage__counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-10);
+  font-size: var(--t-18);
+  color: var(--c-stage-ink-2);
+}
+
+.stage__counts strong {
+  color: var(--c-stage-ink);
+}
+
+.stage__dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-5);
+  margin: var(--s-5) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--c-stage-ink-2);
+}
+
+.stage__dots li,
+.stage__error {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* The demo operator's control. Pushed to the bottom edge by margin-top:auto
+   against the stage's centred column, so it never competes with the number
+   the room is looking at. Full contrast rather than dimmed: it is small and
+   out of the way already, and lowering opacity would be the one thing here
+   that fails 4.5:1. */
+.stage__admin {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.stage__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-pill);
+  background: var(--c-stage-accent);
+}
+
+/* ---------- Full-bleed map screen ---------- */
+
+/* The map route is the one screen that must not scroll: the map owns the
+   gestures. The other two tabs keep the padded scrolling shell. */
+.app--full {
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app__screen--full {
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+  /* Keeps Leaflet's attribution above the tab bar. It is a licence
+     requirement, so it must never be covered. */
+  padding-bottom: var(--tabbar-h);
+}
+
+.map-full {
+  position: relative;
+  flex: 1;
+  /* Load-bearing. The flex default of min-height:auto lets the map push
+     the column past the viewport, which reintroduces page scroll and
+     puts the attribution under the tab bar. */
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+/* Leaflet measures its container, so the container needs a real height. */
+.map-live {
+  height: 100%;
+  width: 100%;
+  background: var(--c-map-ground);
+}
+
+/* The static SVG fallback, filling the same slot. */
+.map-frame--full {
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Header and controls sit on a solid bar, never on bare tiles: text over
+   arbitrary map imagery has no guaranteed contrast ratio. */
+.map-head {
+  background: var(--c-map-scrim);
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+}
+
+.map-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 500; /* over Leaflet panes, under its controls at 800+ */
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-5) var(--gutter);
+  pointer-events: none;
+}
+
+/* Only the controls take pointer events, so the map stays draggable
+   through the gaps in the overlay. */
+.map-overlay > * {
+  pointer-events: auto;
+}
+
+.map-legend {
+  align-self: flex-start;
+  display: flex;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--c-map-scrim);
+  color: var(--c-ink);
+  box-shadow: var(--shadow-card);
+  font-size: var(--t-13);
+  font-weight: var(--w-semibold);
+}
+
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.map-legend__marker {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-pill);
+  display: inline-block;
+}
+
+.map-legend__marker--groups { background: var(--c-pin-social); }
+.map-legend__marker--mine { background: var(--c-pin-mine); }
+
+.map-overlay .state {
+  margin: 0;
+}
+
+.map-locate {
+  align-self: flex-start;
+  background: var(--c-map-scrim);
+  box-shadow: var(--shadow-card);
+}
+
+.map-group-status {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--c-map-scrim);
+  color: var(--c-ink);
+  box-shadow: var(--shadow-card);
+  font-size: var(--t-13);
+  font-weight: var(--w-semibold);
+}
+
+.map-group-status__stale {
+  color: var(--c-ink-3);
+}
+
+/* ---------- Hangout pins ---------- */
+
+/* Set on an L.divIcon, so this is the whole marker. 44px clears the touch
+   floor; the pointer sits at iconAnchor so the tip marks the spot. */
+.pin {
+  width: var(--pin-size, 44px);
+  height: var(--pin-size, 44px);
+  border-radius: var(--r-pill);
+  border: 2px solid var(--c-pin-edge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  box-shadow: 0 2px 6px rgba(0, 33, 69, 0.35);
+}
+
+.pin--social {
+  background: var(--c-pin-social);
+  color: var(--c-on-pin-social);
+}
+
+.pin--study {
+  background: var(--c-pin-study);
+  color: var(--c-on-pin-study);
+}
+
+.pin--mine {
+  background: var(--c-pin-mine);
+  color: var(--c-on-pin-mine);
+}
+
+.pin svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The count rides on the pin, because a pin that says only "here" makes a
+   student tap it to learn whether it is worth walking to. */
+.pin__count {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 1px;
+}
+
+/* ---------- The bottom sheet ---------- */
+
+.map-sheet {
+  flex-shrink: 0;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-border);
+  max-height: 45dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* "Browse buildings" in the frame, at the section-heading size. It stays a
+   real button rather than a heading because it opens and closes the list. */
+.map-sheet__toggle {
+  width: 100%;
+  min-height: var(--tap-lg);
+  background: transparent;
+  border: none;
+  color: var(--c-accent-dark);
+  font-size: var(--t-18);
+  font-weight: var(--w-bold);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: 0 var(--gutter);
+  text-align: left;
+}
+
+.map-sheet__count {
+  font-size: var(--t-13);
+  font-weight: var(--w-medium);
+  color: var(--c-ink-3);
+  white-space: nowrap;
+}
+
+.map-sheet__body {
+  overflow-y: auto;
+  padding: 0 var(--gutter) var(--s-5);
+}
+
+/* One button per pin. This is the keyboard and screen-reader path to the
+   map: a raster tile layer gives assistive tech nothing to read. */
+.pin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+/* The frame draws these as filled tiles on the page tint rather than
+   outlined rows: --c-sunken, 10px, no border. */
+.pin-list__btn {
+  width: 100%;
+  min-height: var(--tap);
+  background: var(--c-sunken);
+  border: none;
+  border-radius: var(--r-sm);
+  padding: var(--s-5) var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  text-align: left;
+  color: var(--c-ink);
+}
+
+/* The frame's "The Nest ›". Decorative, so it stays out of the
+   accessibility tree; the button's aria-label already says what it does. */
+.pin-list__chev {
+  margin-left: auto;
+  color: var(--c-accent-dark);
+  font-weight: var(--w-bold);
+}
+
+.pin-list__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-pin-edge);
+  flex-shrink: 0;
+}
+
+.pin-list__dot--social { background: var(--c-pin-social); }
+.pin-list__dot--study { background: var(--c-pin-study); }
+.pin-list__dot--mine { background: var(--c-pin-mine); }
+
+.pin-list__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pin-list__name {
+  color: var(--c-accent-dark);
+  font-size: var(--t-15);
+  font-weight: var(--w-bold);
+}
+
+.pin-list__meta {
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+/* ---------- Leaflet vendor overrides ----------
+   leaflet.css ships hardcoded colours (white control backgrounds, #0078A8
+   links, rgba(255,255,255,.8) attribution) that are unreadable in dark
+   mode. These rules only re-point vendor selectors at our tokens;
+   tokens.css stays the only place a colour is defined. */
+
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: var(--c-map-ground);
+}
+
+.leaflet-control-attribution {
+  background: var(--c-map-scrim) !important;
+  color: var(--c-ink-3);
+  font-size: 11px;
+  padding: 2px var(--s-3);
+}
+
+.leaflet-control-attribution a {
+  color: var(--c-accent);
+}
+
+/* Leaflet's own controls are 30px, which fails the 44px touch floor. */
+.leaflet-touch .leaflet-bar a,
+.leaflet-bar a {
+  width: var(--tap);
+  height: var(--tap);
+  line-height: var(--tap);
+  background: var(--c-surface);
+  color: var(--c-ink);
+  border-bottom-color: var(--c-border);
+}
+
+.leaflet-bar a:hover {
+  background: var(--c-sunken);
+  color: var(--c-ink);
+}
+
+.leaflet-touch .leaflet-bar {
+  border-color: var(--c-border);
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--c-surface);
+  color: var(--c-ink);
+  box-shadow: var(--shadow-card);
+}
+
+.leaflet-popup-content-wrapper {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+}
+
+.leaflet-popup-content {
+  margin: var(--s-5) var(--s-6);
+  font-size: var(--t-14);
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--c-ink-3);
+  width: 28px;
+  height: 28px;
+  font-size: 20px;
+  line-height: 26px;
+}
+
+/* Keyboard focus on the map and its markers must stay visible. */
+.leaflet-container:focus-visible,
+.leaflet-marker-icon:focus-visible {
+  outline: 3px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* The "you are here" dot and its accuracy halo. Leaflet writes fill and
+   stroke as presentation attributes on the SVG path; a CSS property beats
+   a presentation attribute, so these win without !important. */
+.me-dot {
+  fill: var(--c-me-dot);
+  stroke: var(--c-me-edge);
+}
+
+.me-halo {
+  fill: var(--c-me-halo);
+}
+
+/* ---------- Schedule editor ----------
+
+   Section 3 of docs/feature-plans.md. Every colour here is a token, and
+   every tappable thing clears 44px, which on this screen means the Remove
+   buttons as much as the two time fields beside them. */
+
+/* The row on Me that opens the editor. An <a>, not a button, because it goes
+   somewhere, so a long press offers "open in new tab" and the phone's back
+   gesture comes back here. */
+.row--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.row__go {
+  color: var(--c-ink-3);
+  font-size: var(--t-22);
+  line-height: 1;
+}
+
+/* Hidden from sight but not from the accessibility tree or the keyboard, so
+   the visible button beside it stays the one thing anybody taps. Keeping it
+   focusable is why this is not display: none. */
+.schedule-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.schedule-warnings {
+  padding: var(--s-5) var(--s-6);
+  border-radius: var(--r-sm);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+}
+
+.schedule-warnings ul {
+  margin: var(--s-2) 0 0;
+  padding-left: var(--s-9);
+  font-size: var(--t-14);
+}
+
+.schedule-day {
+  padding: var(--s-6);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.schedule-day__name {
+  margin: 0;
+  font-size: var(--t-16);
+  font-weight: var(--w-semibold);
+  color: var(--c-ink);
+}
+
+.schedule-day__add {
+  align-self: flex-start;
+}
+
+/* Two time fields, a joining word and Remove. At 390px the four of them fit
+   on one line only because the fields are sized in ch rather than stretched,
+   and they wrap rather than overflow on anything narrower. */
+.schedule-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.schedule-block__time {
+  /* A time input is as wide as its locale's own text, which differs between
+     a 24-hour and a 12-hour phone, so it gets room for the wider one. */
+  flex: 0 1 auto;
+  min-width: 7.5rem;
+  padding: 0 var(--s-4);
+}
+
+.schedule-block__to {
+  font-size: var(--t-14);
+  color: var(--c-ink-3);
+}
+
+.schedule-block__remove {
+  margin-left: auto;
+}
+
+.schedule-actions {
+  padding: var(--s-9) var(--gutter) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.schedule-actions .btn {
+  width: 100%;
+}
+
+/* The two error lines and the merge offer sit outside .section, so they need
+   the page's own gutter to line up with everything above them. */
+.schedule-actions ~ .note,
+.app__screen > .inline-message {
+  margin: var(--s-4) var(--gutter) 0;
+}
+
+.app__screen > .inline-error {
+  margin: var(--s-4) var(--gutter) 0;
+}

@@ -1,7 +1,6 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
-from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -9,7 +8,7 @@ from app.db import create_supabase_client, get_db_client
 from app.engine import form_groups
 from app.matching import run_matching
 from app.main import app
-from app.repositories import RecordNotFoundError
+from app.repositories import RepositoryError
 from app.timezones import APPLICATION_TIMEZONE
 from tests.fakes import FakeSupabase, seed_tables
 
@@ -117,7 +116,9 @@ class MatchingPersistenceTests(unittest.TestCase):
     def test_missing_building_prevents_invalid_group(self) -> None:
         self.database.tables["buildings"] = []
 
-        with self.assertRaisesRegex(RecordNotFoundError, "No buildings exist"):
+        with self.assertRaisesRegex(
+            RepositoryError, "A valid building is required"
+        ):
             run_matching(self.database, self.target_date, persist=True)
 
         self.assertEqual(self.database.tables["groups"], [])
@@ -257,7 +258,7 @@ class MatchingPersistenceTests(unittest.TestCase):
                 self.assertEqual(len(terminal_members), 1)
 
     def test_expired_group_does_not_block_a_new_match(self) -> None:
-        expired = datetime.now(ZoneInfo("America/Vancouver")) - timedelta(minutes=1)
+        expired = datetime.now(APPLICATION_TIMEZONE) - timedelta(minutes=1)
         self.database.tables["groups"] = [
             self._existing_group("forming", deadline=expired)
         ]
@@ -341,7 +342,7 @@ class MatchingPersistenceTests(unittest.TestCase):
             "status": status,
             "invite_expires_at": (
                 deadline
-                or datetime(2026, 11, 10, 13, 5, tzinfo=ZoneInfo("America/Vancouver"))
+                or datetime(2026, 11, 10, 13, 5, tzinfo=APPLICATION_TIMEZONE)
             ).isoformat(),
             "confirmed_at": None,
             "status_changed_at": "2026-11-07T00:00:00Z",
@@ -432,20 +433,22 @@ class AutomaticMatchingTests(unittest.TestCase):
         for session in sessions:
             suggestion = self.client.get(
                 "/me/now",
-                headers={"Authorization": f"Bearer {session['session_token']}"},
+                headers={"Authorization": f"Bearer {session['guest_token']}"},
             )
             self.assertEqual(suggestion.status_code, 200)
             self.assertEqual(suggestion.json()["group"]["members"], [])
-            self.assertEqual(
-                suggestion.json()["group"]["spot"]["building"],
-                "To be announced",
-            )
+            # The privacy rule, asserted directly: a forming group has no
+            # spot to leak. It used to arrive as a building named
+            # "To be announced", which put the rule in the frontend's hands.
+            self.assertEqual(suggestion.json()["group"]["state"], "forming")
+            self.assertIsNone(suggestion.json()["group"]["spot"])
 
     def _signup(self, name: str):
         return self.client.post(
             "/students",
             json={
                 "first_name": name,
-                "preset_schedule": "tue_thu_afternoon",
+                "preset_id": "tue-thu-afternoons",
+                "guest": True,
             },
         )

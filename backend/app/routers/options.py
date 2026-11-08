@@ -6,6 +6,7 @@ from supabase import Client
 
 from app.db import get_db_client
 from app.repositories import RepositoryError
+from app.repositories.buildings import BuildingRepository
 from app.repositories.reference_data import ReferenceDataRepository
 
 router = APIRouter(tags=["options"])
@@ -22,12 +23,14 @@ class OnboardingOptions(BaseModel):
             "example": {
                 "languages": [{"id": "en", "label": "English"}],
                 "tags": [{"id": "transfer", "label": "Transfer student"}],
+                "buildings": [{"id": "nest", "label": "The Nest"}],
             }
         }
     )
 
     languages: list[ReferenceOption]
     tags: list[ReferenceOption]
+    buildings: list[ReferenceOption]
 
 
 @router.get(
@@ -36,7 +39,8 @@ class OnboardingOptions(BaseModel):
     summary="List controlled onboarding options",
     description=(
         "Returns canonical language codes and student-type tag slugs supported "
-        "by POST /students."
+        "by POST /students, plus the meeting-building slugs accepted by "
+        "POST /groups."
     ),
 )
 def get_options(
@@ -46,6 +50,7 @@ def get_options(
     try:
         languages = repository.list_languages()
         tags = repository.list_student_tags()
+        buildings = BuildingRepository(client).list_all()
     except RepositoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -59,5 +64,9 @@ def get_options(
         tags=[
             ReferenceOption(id=str(row["slug"]), label=str(row["label"]))
             for row in tags
+        ],
+        buildings=[
+            ReferenceOption(id=str(row["slug"]), label=str(row["name"]))
+            for row in buildings
         ],
     )

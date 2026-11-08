@@ -1,6 +1,9 @@
+from collections import Counter
 from dataclasses import dataclass
 from datetime import time
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
+
+from app.constants import MAX_GROUP_SIZE, MIN_GROUP_SIZE
 
 
 @dataclass(frozen=True)
@@ -24,8 +27,8 @@ class _Block:
 def form_groups(
     free_blocks: Iterable[dict[str, Any]],
     *,
-    min_size: int = 3,
-    max_size: int = 5,
+    min_size: int = MIN_GROUP_SIZE,
+    max_size: int = MAX_GROUP_SIZE,
 ) -> list[GroupPlan]:
     """Greedily form deterministic groups with a non-empty common overlap.
 
@@ -139,3 +142,41 @@ def _parse_time(value: Any) -> time:
     if isinstance(value, time):
         return value
     return time.fromisoformat(str(value))
+
+
+def pick_spot(
+    buildings: Sequence[dict[str, Any]],
+    favourites: Sequence[Sequence[int]] = (),
+    *,
+    spread: int = 0,
+) -> int:
+    """Which building a group meets at.
+
+    AGENTS.md: picked from members' favourite spots, then shortest total
+    walk. The first half is real here. The second is not, because there is no
+    distance table yet, so the tie-break is `spread`, which the caller varies
+    per group.
+
+    That matters more than it sounds. Every group landing on one building
+    would put a single pin on the map and one number on the projector, which
+    is not a bug in the map but it is a demo with nothing in it.
+    """
+    if not buildings:
+        raise ValueError("pick_spot needs at least one building")
+
+    counts = Counter(
+        building_id
+        for student_spots in favourites
+        for building_id in set(student_spots)
+    )
+    known = {int(building["id"]) for building in buildings}
+    wanted = [
+        (count, -building_id)
+        for building_id, count in counts.items()
+        if building_id in known
+    ]
+    if wanted:
+        return -max(wanted)[1]
+
+    ordered = sorted(int(building["id"]) for building in buildings)
+    return ordered[spread % len(ordered)]

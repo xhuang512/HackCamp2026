@@ -1,7 +1,7 @@
 from collections import Counter
 from typing import Any
 
-from app.repositories.base import RepositoryError, execute
+from app.repositories.base import RepositoryError, database_error_code, execute
 from app.repositories.reference_data import ReferenceDataRepository
 
 
@@ -29,6 +29,98 @@ class StudentRepository:
             .order("id"),
             "read matchable students",
         )
+
+    def update_profile(
+        self,
+        student_id: str,
+        *,
+        first_name: str | None = None,
+        paused: bool | None = None,
+        visibility: str | None = None,
+    ) -> None:
+        """Push identity changes onto the row the matcher reads.
+
+        This is the write that was missing. Identity lives in store.py, in
+        memory, while list_matchable() filters the Supabase `paused` column,
+        so a student who tapped pause kept being formed into groups. AGENTS.md
+        says pause and visibility are always respected by matching, which
+        means they have to reach this table and not just the dict.
+
+        Every argument is optional and None means "leave it alone", so a
+        caller changing one field cannot blank the others.
+        """
+        changes = {
+            column: value
+            for column, value in (
+                ("first_name", first_name),
+                ("paused", paused),
+                ("visibility", visibility),
+            )
+            if value is not None
+        }
+        if not changes:
+            return
+        execute(
+            self.client.table("students").update(changes).eq("id", student_id),
+            "update student profile",
+        )
+
+    def set_spots(self, student_id: str, building_ids: list[int]) -> None:
+        """Replace the student's favourite spots, in the order given.
+
+        Replace rather than merge: the Me tab sends the whole list, so a
+        removed spot has to actually disappear. AGENTS.md caps it at three and
+        the API enforces that before this is called.
+        """
+        try:
+            execute(
+                self.client.table("student_spots").delete().eq("student_id", student_id),
+                "clear student favourite spots",
+            )
+        except RepositoryError as exc:
+            if database_error_code(exc) == "PGRST205":
+                return
+            raise
+        if not building_ids:
+            return
+        execute(
+            self.client.table("student_spots").insert(
+                [
+                    {
+                        "student_id": student_id,
+                        "building_id": building_id,
+                        "rank": index + 1,
+                    }
+                    for index, building_id in enumerate(building_ids)
+                ]
+            ),
+            "create student favourite spots",
+        )
+
+    def list_spot_ids(self, student_ids: list[str]) -> dict[str, list[int]]:
+        """Favourite building ids per student, best first.
+
+        Takes a list because pick_spot asks about a whole group at once, and
+        one query beats five.
+        """
+        if not student_ids:
+            return {}
+        try:
+            rows = execute(
+                self.client.table("student_spots")
+                .select("student_id,building_id,rank")
+                .in_("student_id", student_ids)
+                .order("rank"),
+                "read student favourite spots",
+            )
+        except RepositoryError as exc:
+            if database_error_code(exc) == "PGRST205":
+                return {}
+            raise
+        spots: dict[str, list[int]] = {}
+        for row in rows:
+            spots.setdefault(str(row["student_id"]), []).append(int(row["building_id"]))
+        return spots
 
     def delete(self, student_id: str) -> None:
         execute(

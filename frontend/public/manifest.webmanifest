@@ -1,0 +1,17 @@
+{
+  "name": "UBC Meet",
+  "short_name": "UBC Meet",
+  "description": "Find a small group of UBC students free in your next gap between classes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

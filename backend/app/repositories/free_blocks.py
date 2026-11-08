@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from app.repositories.base import ReferenceDataError, RepositoryError, execute
+from app.repositories.base import RepositoryError, execute
 
 
 @dataclass(frozen=True)
@@ -9,25 +9,6 @@ class FreeBlockInput:
     day: int
     start_time: str
     end_time: str
-
-
-PRESET_FREE_BLOCKS: dict[str, tuple[FreeBlockInput, ...]] = {
-    # The only preset documented by the existing API example. Day follows the
-    # supplied SQL schema: Monday=0, Tuesday=1, Thursday=3.
-    "tue_thu_afternoon": (
-        FreeBlockInput(day=1, start_time="13:00", end_time="15:00"),
-        FreeBlockInput(day=3, start_time="13:00", end_time="15:00"),
-    )
-}
-
-
-def resolve_preset(preset_schedule: str) -> tuple[FreeBlockInput, ...]:
-    try:
-        return PRESET_FREE_BLOCKS[preset_schedule]
-    except KeyError as exc:
-        raise ReferenceDataError(
-            f"Unknown preset schedule: {preset_schedule}"
-        ) from exc
 
 
 class FreeBlockRepository:
