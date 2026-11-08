@@ -18,10 +18,12 @@ MAX_GROUP_SIZE = 5
 # seconds, so a screenshot is useless.
 CHECKIN_WINDOW_SECONDS = 30
 
-# Group states, from AGENTS.md. 001_core_schema.sql shipped with
-# proposed/active/completed/cancelled, which had no way to say "confirmed"
-# and so no way to store the fact that decides whether the spot is visible.
-# sql/002_plan_alignment.sql migrates the values.
+# Group states, from AGENTS.md, and the same five values sql/schema.sql
+# constrains groups.status to. The earlier schema had
+# proposed/active/completed/cancelled, which could not say "confirmed" and so
+# could not store the fact that decides whether the spot is visible. The
+# LEGACY_ names below still read those old values, for a database seeded
+# before the lifecycle schema landed.
 FORMING = "forming"
 CONFIRMED = "confirmed"
 ACTIVE = "active"

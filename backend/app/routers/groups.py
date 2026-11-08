@@ -17,11 +17,8 @@ from app import codes, store
 from app.auth import get_current_student_id, onboarded_user
 from app.constants import (
     CONFIRMED,
-    DECLINED,
-    FORMING,
     JOINED,
     MAX_GROUP_SIZE,
-    MIN_GROUP_SIZE,
 )
 from app.db import get_db_client
 from app.groups_view import (
@@ -40,7 +37,11 @@ from app.models import (
     GroupOut,
     OpenGroupOut,
 )
-from app.repositories import RecordNotFoundError, RepositoryError
+from app.repositories import (
+    InvitationConflictError,
+    RecordNotFoundError,
+    RepositoryError,
+)
 from app.repositories.buildings import BuildingRepository
 from app.repositories.free_blocks import FreeBlockRepository
 from app.repositories.group_members import GroupMemberRepository, state_of
@@ -61,13 +62,8 @@ class GroupResponseUpdate(BaseModel):
     )
 
     group_id: str
-    # The wire values the merged frontend and tests already use. The stored
-    # member states are AGENTS.md's invited/joined/declined/expired, and
-    # _STORED maps between the two so neither side has to change.
+    # Compatibility wire values. Durable storage uses accepted/declined.
     response: Literal["joined", "skipped"]
-
-
-_STORED = {"joined": JOINED, "skipped": DECLINED}
 
 
 # ---------------------------------------------------------------- responding
@@ -107,8 +103,11 @@ def _respond(
 ) -> GroupResponseUpdate:
     members = GroupMemberRepository(client)
     try:
-        members.update_response(group_id, student.id, _STORED[response])
-        _settle_state(client, group_id)
+        members.respond_to_invitation(
+            group_id,
+            student.id,
+            response,
+        )
     except RecordNotFoundError as exc:
         # A suggested group already has an invited membership to update. An
         # open group deliberately does not: joining it creates the membership
@@ -117,14 +116,19 @@ def _respond(
             try:
                 group = GroupRepository(client).get(group_id)
                 group_members = members.list_for_group(group_id)
+                # Not open, or not in the caller's gap, means the caller has
+                # no relationship to this group at all. Saying why would
+                # confirm it exists, so both fall through to the 404 below.
+                # "Full" is different: GET /groups/open already showed this
+                # group to the caller, so the only new fact is that it filled
+                # up while they were deciding, which is worth telling them.
                 if state_for(group, group_members) != CONFIRMED:
-                    raise HTTPException(status_code=409, detail="That group is not open.")
+                    raise RecordNotFoundError(str(exc))
+                if not _overlaps_a_gap(group, student):
+                    raise RecordNotFoundError(str(exc))
                 if len(joined_members(group_members)) >= MAX_GROUP_SIZE:
                     raise HTTPException(status_code=409, detail="That group is full.")
-                if not _overlaps_a_gap(group, student):
-                    raise HTTPException(status_code=409, detail="That group is outside your gap.")
                 members.create_joined(group_id, student.id)
-                _settle_state(client, group_id)
                 return GroupResponseUpdate(group_id=group_id, response=response)
             except HTTPException:
                 raise
@@ -136,30 +140,14 @@ def _respond(
                     detail="Could not join the open group",
                 ) from create_exc
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvitationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RepositoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not update group membership",
         ) from exc
     return GroupResponseUpdate(group_id=group_id, response=response)
-
-
-def _settle_state(client: Client, group_id: str) -> None:
-    """Move the group between forming and confirmed after an answer.
-
-    The spot becomes visible at exactly this moment, so the transition is
-    worth storing rather than only deriving: the projector counts groups by
-    status and should not have to count members to do it.
-    """
-    groups = GroupRepository(client)
-    group = groups.get(group_id)
-    stored = str(group.get("status") or FORMING)
-    if stored not in {FORMING, CONFIRMED}:
-        return
-    members = GroupMemberRepository(client).list_for_group(group_id)
-    wanted = CONFIRMED if len(joined_members(members)) >= MIN_GROUP_SIZE else FORMING
-    if wanted != stored:
-        groups.set_status(group_id, wanted)
 
 
 # ------------------------------------------------------------- open groups

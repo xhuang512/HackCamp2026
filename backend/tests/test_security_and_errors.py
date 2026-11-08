@@ -63,7 +63,7 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertIsNone(response.json()["group"])
 
     def test_declined_student_gets_a_null_group(self) -> None:
-        self.database.tables["group_members"][0]["response"] = "declined"
+        self.database.tables["group_members"][0]["invitation_status"] = "declined"
         token = create_guest_session("s_current")
 
         response = self.client.get(
@@ -114,8 +114,11 @@ class SecurityAndErrorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(
-            {row["student_id"]: row["response"] for row in self.database.tables["group_members"]},
-            {"s_current": "invited", "s_other": "joined"},
+            {
+                row["student_id"]: row["invitation_status"]
+                for row in self.database.tables["group_members"]
+            },
+            {"s_current": "invited", "s_other": "accepted"},
         )
 
     def test_confirmed_group_shows_first_names_and_the_spot(self) -> None:
@@ -128,7 +131,7 @@ class SecurityAndErrorTests(unittest.TestCase):
             {
                 "group_id": "g_41",
                 "student_id": "s_third",
-                "response": "joined",
+                "invitation_status": "accepted",
                 "arrived_at": None,
             }
         )
@@ -147,8 +150,10 @@ class SecurityAndErrorTests(unittest.TestCase):
 
     def test_forming_group_keeps_the_meeting_spot_private(self) -> None:
         for membership in self.database.tables["group_members"]:
-            membership["response"] = (
-                "joined" if membership["student_id"] == "s_current" else "declined"
+            membership["invitation_status"] = (
+                "accepted"
+                if membership["student_id"] == "s_current"
+                else "declined"
             )
         token = create_guest_session("s_current")
 
@@ -166,8 +171,8 @@ class SecurityAndErrorTests(unittest.TestCase):
     def test_an_invited_member_is_counted_but_not_named(self) -> None:
         # s_other has joined, s_current has not answered. A joiner sees the
         # names of people who joined, never of people merely invited.
-        self.database.tables["group_members"][0]["response"] = "joined"
-        self.database.tables["group_members"][1]["response"] = "invited"
+        self.database.tables["group_members"][0]["invitation_status"] = "accepted"
+        self.database.tables["group_members"][1]["invitation_status"] = "invited"
         token = create_guest_session("s_current")
 
         suggestion = self.client.get(

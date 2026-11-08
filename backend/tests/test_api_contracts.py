@@ -154,7 +154,7 @@ class ApiContractTests(unittest.TestCase):
 
     def test_checkin_checks_both_students_in_once(self) -> None:
         for membership in self.database.tables["group_members"]:
-            membership["response"] = "joined"
+            membership["invitation_status"] = "accepted"
         other = codes.issue("s_other").code
 
         first = self.client.post(
@@ -178,7 +178,7 @@ class ApiContractTests(unittest.TestCase):
 
     def test_checkin_rejects_a_code_from_outside_the_group(self) -> None:
         for membership in self.database.tables["group_members"]:
-            membership["response"] = "joined"
+            membership["invitation_status"] = "accepted"
 
         response = self.client.post(
             "/groups/g_41/checkin",
@@ -194,7 +194,7 @@ class ApiContractTests(unittest.TestCase):
 
     def test_checkin_explains_that_your_own_code_cannot_be_used(self) -> None:
         for membership in self.database.tables["group_members"]:
-            membership["response"] = "joined"
+            membership["invitation_status"] = "accepted"
 
         response = self.client.post(
             "/groups/g_41/checkin",
@@ -227,8 +227,8 @@ class ApiContractTests(unittest.TestCase):
             for row in self.database.tables["group_members"]
             if row["group_id"] == "g_41" and row["student_id"] == "s_other"
         )
-        self.assertEqual(current["response"], "joined")
-        self.assertEqual(other["response"], "joined")
+        self.assertEqual(current["invitation_status"], "accepted")
+        self.assertEqual(other["invitation_status"], "accepted")
 
     def test_join_open_group_creates_a_membership(self) -> None:
         store.get("s_current").free_blocks = [(1, time(13, 0), time(15, 0))]
@@ -243,14 +243,21 @@ class ApiContractTests(unittest.TestCase):
                 {"id": student_id, "first_name": f"Open {index}", "paused": False, "deleted_at": None}
             )
             self.database.tables["group_members"].append(
-                {"group_id": "g_41", "student_id": student_id, "response": "joined", "arrived_at": None}
+                {
+                    "group_id": "g_41",
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                    "arrived_at": None,
+                }
             )
 
         response = self.client.post("/groups/g_41/join", headers=self.auth_headers)
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(any(
-            row["group_id"] == "g_41" and row["student_id"] == "s_current" and row["response"] == "joined"
+            row["group_id"] == "g_41"
+            and row["student_id"] == "s_current"
+            and row["invitation_status"] == "accepted"
             for row in self.database.tables["group_members"]
         ))
 
@@ -267,7 +274,12 @@ class ApiContractTests(unittest.TestCase):
                 {"id": student_id, "first_name": f"Hidden {index}", "paused": False, "deleted_at": None}
             )
             self.database.tables["group_members"].append(
-                {"group_id": "g_41", "student_id": student_id, "response": "joined", "arrived_at": None}
+                {
+                    "group_id": "g_41",
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                    "arrived_at": None,
+                }
             )
 
         response = self.client.get("/groups/open", headers=self.auth_headers)
@@ -344,6 +356,64 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(buildings[0]["slug"], "nest")
         self.assertEqual(buildings[0]["free_count"], 3)
 
+    def test_map_withholds_my_pin_from_an_invited_caller(self) -> None:
+        # A genuinely confirmed group, three others accepted, and the caller
+        # still only invited. The pin carries the building's coordinates, so
+        # handing it over would say where the group is meeting before the
+        # caller joined it, which the group card already refuses to do.
+        #
+        # The building itself may well appear in the public activity list:
+        # that is a count with no name on it and no claim about the caller.
+        # Only my_group is personal, so only my_group is withheld.
+        self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        for student_id in ("s_third", "s_fourth"):
+            self.database.tables["students"].append(
+                {
+                    "id": student_id,
+                    "first_name": "Rosa",
+                    "paused": False,
+                    "deleted_at": None,
+                }
+            )
+            self.database.tables["group_members"].append(
+                {
+                    "group_id": "g_41",
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                    "arrived_at": None,
+                }
+            )
+        self.assertEqual(self._membership("s_current")["invitation_status"], "invited")
+
+        response = self.client.get("/map", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["my_group"])
+
+    def test_map_keeps_my_pin_once_the_group_is_active(self) -> None:
+        # A group that has started is exactly when its member needs the pin.
+        # This read used to require the status to be "confirmed" and nothing
+        # else, so the pin vanished the moment the meeting began.
+        self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["groups"][0]["status"] = "active"
+        self._membership("s_current")["invitation_status"] = "accepted"
+
+        response = self.client.get("/map", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        pin = response.json()["my_group"]
+        self.assertIsNotNone(pin)
+        self.assertEqual(pin["slug"], "nest")
+        self.assertEqual(pin["group_id"], "g_41")
+
+    def _membership(self, student_id: str) -> dict[str, object]:
+        return next(
+            row
+            for row in self.database.tables["group_members"]
+            if row["student_id"] == student_id
+        )
+
     def test_patch_me_reaches_the_table_the_matcher_reads(self) -> None:
         response = self.client.patch(
             "/me", json={"paused": True}, headers=self.auth_headers
@@ -382,7 +452,8 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.json(), {"detail": "Demo reset is disabled"})
 
     def test_skeleton_endpoints_are_in_openapi(self) -> None:
-        paths = self.client.get("/openapi.json").json()["paths"]
+        openapi = self.client.get("/openapi.json").json()
+        paths = openapi["paths"]
 
         self.assertTrue(
             {
@@ -401,6 +472,16 @@ class ApiContractTests(unittest.TestCase):
                 "/projector",
                 "/admin/reset",
             }.issubset(paths)
+        )
+        suggested_group = openapi["components"]["schemas"]["GroupOut"]
+        self.assertTrue(
+            {
+                "state",
+                "my_state",
+                "joined_count",
+                "checked_in_count",
+                "needs",
+            }.issubset(suggested_group["properties"])
         )
 
 

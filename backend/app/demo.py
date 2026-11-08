@@ -29,8 +29,7 @@ from datetime import date
 
 from .matching import next_matching_dates, run_matching
 from .presets import PRESETS
-from .repositories import RepositoryError
-from .repositories.base import database_error_code, execute
+from .repositories.base import execute
 from .repositories.reference_data import ReferenceDataRepository
 
 logger = logging.getLogger(__name__)
@@ -87,26 +86,21 @@ def reseed(client, *, student_count: int = SEED_STUDENT_COUNT) -> SeedResult:
 
 
 def _seed_buildings(client) -> int:
-    try:
-        rows = execute(
-            client.table("buildings").upsert(list(BUILDINGS), on_conflict="slug"),
-            "seed buildings",
-        )
-    except RepositoryError as exc:
-        if database_error_code(exc) != "23502":
-            raise
-        # Rolling-deploy compatibility for databases that have not applied
-        # 002_plan_alignment.sql yet. The old NOT NULL column belonged to
-        # deleted building-QR logic. These inert values are never read,
-        # returned, or accepted as codes; the migration still drops them.
-        legacy_rows = [
-            {**building, "code_secret": f"obsolete-{building['slug']}"}
-            for building in BUILDINGS
-        ]
-        rows = execute(
-            client.table("buildings").upsert(legacy_rows, on_conflict="slug"),
-            "seed buildings on pre-002 schema",
-        )
+    # buildings.code_secret is NOT NULL in sql/schema.sql and nothing reads
+    # it: it belonged to the building-QR idea, which the product dropped in
+    # favour of member-to-member check-in codes. Supplying an inert value is
+    # what lets a seed insert succeed without reviving the column's meaning.
+    # These strings are never read, returned, or accepted as check-in codes.
+    rows = execute(
+        client.table("buildings").upsert(
+            [
+                {**building, "code_secret": f"obsolete-{building['slug']}"}
+                for building in BUILDINGS
+            ],
+            on_conflict="slug",
+        ),
+        "seed buildings",
+    )
     return len(rows)
 
 

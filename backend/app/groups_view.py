@@ -9,7 +9,8 @@ rules in AGENTS.md have to come out the same way in all three:
 
 The rules this file enforces, so no route has to remember them:
 
-  * The meeting spot is hidden until the group is confirmed.
+  * The meeting spot is hidden until the group is confirmed AND the
+    caller has joined it.
   * A group confirms at MIN_GROUP_SIZE joined members, not when everyone has
     answered.
   * First names go only to a caller who has joined, and only name members who
@@ -21,6 +22,8 @@ from datetime import date
 from typing import Any
 
 from .constants import (
+    ACTIVE,
+    COMPLETED,
     CONFIRMED,
     DECLINED,
     EXPIRED,
@@ -43,6 +46,11 @@ DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # field is in the contract, so it stays until buildings carry distances.
 PLACEHOLDER_WALK_MIN = 5
 
+# A group has a place to be from the moment it confirms until it is over.
+# ACTIVE belongs here and was once missing from GET /map, which took the pin
+# away from the map at the exact moment the meeting started.
+SPOT_REVEALED_STATES = (CONFIRMED, ACTIVE, COMPLETED)
+
 
 def live_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Members who are still part of the group: invited or joined."""
@@ -55,6 +63,42 @@ def live_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def joined_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [member for member in members if member.get("response") == JOINED]
+
+
+def caller_has_joined(
+    members: list[dict[str, Any]], caller_id: str
+) -> bool:
+    """Whether this caller is a joined member, not merely an invited one."""
+    return any(
+        str(member["student_id"]) == caller_id and member.get("response") == JOINED
+        for member in members
+    )
+
+
+def spot_is_visible_to(
+    group: dict[str, Any], members: list[dict[str, Any]], caller_id: str
+) -> bool:
+    """Whether this caller may learn where the group is meeting.
+
+    Both halves are required. The group has to have got past forming, and
+    the caller has to have joined it: an invitation is not membership, so a
+    student who has not accepted sees a confirmed group with no location.
+    Accepting is the act that reveals the place.
+
+    GET /me/now, GET /groups/{id} and GET /map all have to answer this the
+    same way. GET /map used to answer it differently in two ways, excluding
+    a group that had already started and including a caller who had only
+    been invited, which is why this is one function instead of a comparison
+    written out per route.
+    """
+    return _spot_is_visible(state_for(group, members), members, caller_id)
+
+
+def _spot_is_visible(
+    state: str, members: list[dict[str, Any]], caller_id: str
+) -> bool:
+    """The rule itself, for a caller that already derived the state."""
+    return state in SPOT_REVEALED_STATES and caller_has_joined(members, caller_id)
 
 
 def checked_in_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -114,9 +158,12 @@ def group_out(
     joined = joined_members(all_members)
     state = state_for(group, all_members)
 
-    # Names: only to a joined caller, and only of joined members.
+    # Names: only to a joined caller, and only of joined members. An
+    # invitation is not membership, so everything the group itself owns,
+    # its members' names and where it is meeting, waits until this caller
+    # has accepted.
     names: list[str] = []
-    if mine is not None and mine.get("response") == JOINED:
+    if caller_has_joined(all_members, caller_id):
         joined_ids = [str(m["student_id"]) for m in joined]
         by_id = students.public_names(joined_ids)
         names = [by_id[item] for item in joined_ids if item in by_id]
@@ -126,7 +173,9 @@ def group_out(
     shared = students.shared_signals([str(m["student_id"]) for m in live_members(all_members)])
 
     spot = None
-    if state != FORMING and group.get("building_id") is not None:
+    if group.get("building_id") is not None and _spot_is_visible(
+        state, all_members, caller_id
+    ):
         spot = MeetingSpot(
             building=groups.building_name(group.get("building_id")),
             walk_min=PLACEHOLDER_WALK_MIN,

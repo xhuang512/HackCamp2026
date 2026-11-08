@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 
 def next_weekday(target: int) -> date:
@@ -14,6 +15,12 @@ def next_weekday(target: int) -> date:
 
 
 def seed_tables() -> dict[str, list[dict[str, Any]]]:
+    group_date = next_weekday(1)
+    group_start = datetime.combine(
+        group_date,
+        datetime.strptime("13:15", "%H:%M").time(),
+        tzinfo=ZoneInfo("America/Vancouver"),
+    )
     return {
         "tags": [
             {
@@ -73,12 +80,15 @@ def seed_tables() -> dict[str, list[dict[str, Any]]]:
         "groups": [
             {
                 "id": "g_41",
-                "on_date": next_weekday(1).isoformat(),
+                "on_date": group_date.isoformat(),
                 "start_time": "13:15:00",
                 "end_time": "14:30:00",
                 "building_id": 1,
                 "mode": "study",
                 "status": "forming",
+                "invite_expires_at": (group_start - timedelta(minutes=10)).isoformat(),
+                "confirmed_at": None,
+                "status_changed_at": "2026-11-07T00:00:00Z",
                 "created_at": "2026-11-07T00:00:00Z",
             }
         ],
@@ -86,13 +96,13 @@ def seed_tables() -> dict[str, list[dict[str, Any]]]:
             {
                 "group_id": "g_41",
                 "student_id": "s_current",
-                "response": "invited",
+                "invitation_status": "invited",
                 "arrived_at": None,
             },
             {
                 "group_id": "g_41",
                 "student_id": "s_other",
-                "response": "joined",
+                "invitation_status": "accepted",
                 "arrived_at": None,
             },
         ],
@@ -108,6 +118,111 @@ class FakeSupabase:
     def table(self, name: str) -> FakeQuery:
         self.tables.setdefault(name, [])
         return FakeQuery(self, name)
+
+    def rpc(self, name: str, params: dict[str, Any]) -> FakeRpcQuery:
+        return FakeRpcQuery(self, name, params)
+
+
+class FakePostgrestError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class FakeRpcQuery:
+    def __init__(
+        self,
+        client: FakeSupabase,
+        name: str,
+        params: dict[str, Any],
+    ):
+        self.client = client
+        self.name = name
+        self.params = params
+
+    def execute(self) -> SimpleNamespace:
+        if self.name != "respond_to_group_invitation":
+            raise FakePostgrestError("42883", f"Unknown RPC: {self.name}")
+
+        group_id = str(self.params["p_group_id"])
+        student_id = str(self.params["p_student_id"])
+        target = str(self.params["p_response"])
+        if target not in {"accepted", "declined"}:
+            raise FakePostgrestError(
+                "22023",
+                "Invitation response must be accepted or declined",
+            )
+        group = next(
+            (
+                row
+                for row in self.client.tables["groups"]
+                if str(row["id"]) == group_id
+            ),
+            None,
+        )
+        if group is None:
+            raise FakePostgrestError("P0002", "Group invitation was not found")
+        member = next(
+            (
+                row
+                for row in self.client.tables["group_members"]
+                if str(row["group_id"]) == group_id
+                and str(row["student_id"]) == student_id
+            ),
+            None,
+        )
+        if member is None:
+            raise FakePostgrestError(
+                "P0002",
+                "No membership exists for the current student and group",
+            )
+
+        current = str(member["invitation_status"])
+        if current != target:
+            if group["status"] not in {"forming", "confirmed"}:
+                raise FakePostgrestError(
+                    "P0001",
+                    f"Invitations cannot change while the group is {group['status']}",
+                )
+            deadline = datetime.fromisoformat(
+                str(group["invite_expires_at"]).replace("Z", "+00:00")
+            )
+            if datetime.now(timezone.utc) >= deadline:
+                raise FakePostgrestError(
+                    "P0001",
+                    "The invitation deadline has passed",
+                )
+            if current != "invited":
+                raise FakePostgrestError(
+                    "P0001",
+                    f"Cannot change an {current} invitation to {target}",
+                )
+            member["invitation_status"] = target
+
+        accepted_count = sum(
+            row["invitation_status"] == "accepted"
+            for row in self.client.tables["group_members"]
+            if str(row["group_id"]) == group_id
+        )
+        if group["status"] == "forming" and accepted_count >= 3:
+            now = datetime.now(timezone.utc).isoformat()
+            group["status"] = "confirmed"
+            group["confirmed_at"] = group.get("confirmed_at") or now
+            group["status_changed_at"] = now
+
+        return SimpleNamespace(
+            data=[
+                {
+                    "group_id": group_id,
+                    "student_id": student_id,
+                    "invitation_status": member["invitation_status"],
+                    "group_status": group["status"],
+                    "accepted_count": accepted_count,
+                    "invite_expires_at": group["invite_expires_at"],
+                }
+            ]
+        )
 
 
 class FakeQuery:
@@ -198,7 +313,7 @@ class FakeQuery:
                     row.setdefault("id", str(uuid4()))
                 if self.table_name == "free_blocks":
                     row.setdefault("id", len(rows) + 1)
-                # buildings.id is a smallserial in 001_core_schema.sql, so
+                # buildings.id is a smallserial in schema.sql, so
                 # Postgres fills it and an upsert here has to as well.
                 if self.table_name in {"tags", "courses", "buildings"}:
                     next_id = max(

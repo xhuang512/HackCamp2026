@@ -18,12 +18,21 @@ export default function GroupCard({ group, label, busy = false, onJoin, onSkip }
 
       {joined && group.members.length > 0 && <AvatarRow members={group.members} />}
       <SharedTags shared={group.shared} />
+      {/* The backend sends no spot for two different reasons, and they need
+          different sentences. Either not enough people have confirmed yet,
+          or the group has confirmed and this reader has not joined it.
+          Reading "waiting for 0 more people" in the second case is what made
+          this a condition on needs rather than on spot alone. */}
       {group.spot ? (
         <SpotRow spot={group.spot} />
-      ) : (
+      ) : group.needs > 0 ? (
         <p className="waiting">
           Waiting for {group.needs} more {group.needs === 1 ? 'person' : 'people'} to confirm.
           The meeting building stays private until then.
+        </p>
+      ) : (
+        <p className="waiting">
+          This group is confirmed. Join it to see where everyone is meeting.
         </p>
       )}
 

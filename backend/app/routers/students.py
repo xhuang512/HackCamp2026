@@ -1,20 +1,11 @@
 """GET /me/now: the next gap and the group suggested for it.
 
-The one screen the whole app is for, so this route carries the privacy rules
-rather than trusting the frontend with them. The assembly lives in
-app/groups_view.py, shared with GET /groups/{id} and the check-in route so
-all three answer identically.
-
-The response moved to the shape docs/AGENTS.md specifies. What changed from
-the merged version, for anyone reading a diff: `response` became `my_state`
-with AGENTS.md's member states, `state`, `joined_count`, `checked_in_count`,
-`seats_left` and `needs` were added, `spot` is now null while the group is
-forming instead of a building reading "To be announced", and no suggestion
-returns {"gap": …, "group": null} instead of {"status": "waiting"}.
+The lifecycle database uses invitation_status/accepted. The frontend contract
+stays on the AGENTS.md GroupOut shape assembled by app/groups_view.py.
 """
 
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -34,13 +25,8 @@ router = APIRouter(tags=["students"])
 logger = logging.getLogger(__name__)
 
 
-# POST /students used to live here. It now lives in routers/identity.py,
-# because the frontend sends the signup branch's richer body
-# (preset_id/free_blocks, ask_me_about, visibility, guest) and expects
-# {student, aha, guest_token} back, which this version did not return.
-# The Supabase student repository has no identity columns wired up yet, so
-# the surviving implementation is the store.py one. Porting it is the job
-# that retires that split.
+# POST /students lives in routers/identity.py. It owns the richer onboarding
+# request and guest-token response used by the frontend route gate.
 
 
 class NoSuggestionError(Exception):
@@ -70,20 +56,21 @@ def get_current_suggestion(
         memberships = [
             membership
             for membership in members.list_for_student(student.id)
-            # A declined group is not a suggestion any more. An expired one
-            # never became one.
-            if membership["response"] not in {"declined", "expired", "skipped"}
+            if membership["invitation_status"] not in {"declined", "expired"}
         ]
-        upcoming = groups.list_upcoming(
-            [str(membership["group_id"]) for membership in memberships]
-        )
+        by_group = {
+            str(membership["group_id"]): membership for membership in memberships
+        }
+        upcoming = [
+            group
+            for group in groups.list_upcoming(list(by_group))
+            if _actionable_for_member(group, by_group[str(group["id"])])
+        ]
         group = _first_group_with_availability(
             upcoming,
             free_blocks.list_for_student(student.id),
         )
     except NoSuggestionError:
-        # No group, but the gap is still worth sending: the screen says
-        # "your next gap" above the open groups it falls back to.
         return NowResponse(gap=_next_gap(student), group=None)
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -105,12 +92,27 @@ def get_current_suggestion(
         ) from exc
 
 
-def _next_gap(student: store.Student) -> GapOut | None:
-    """The student's own next free block, when no group names one.
+def _actionable_for_member(group: dict[str, Any], membership: dict[str, Any]) -> bool:
+    deadline = _invitation_deadline(group)
+    now = datetime.now(timezone.utc)
+    if str(group.get("status")) == "forming" and now >= deadline:
+        return False
+    return not (
+        membership.get("invitation_status") == "invited" and now >= deadline
+    )
 
-    Sorted by "days from today, then start time", so Thursday reads as sooner
-    than Monday when today is Wednesday.
-    """
+
+def _invitation_deadline(group: dict[str, Any]) -> datetime:
+    value = group.get("invite_expires_at")
+    if value is None:
+        raise RepositoryError("Database returned no invitation deadline")
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise RepositoryError("Database returned an invalid invitation deadline")
+    return parsed
+
+
+def _next_gap(student: store.Student) -> GapOut | None:
     if not student.free_blocks:
         return None
 

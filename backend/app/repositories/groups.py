@@ -1,20 +1,16 @@
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from app.constants import CONFIRMED, DISSOLVED, FORMING, LIVE_GROUP_STATES
-from app.repositories.base import (
-    RecordNotFoundError,
-    RepositoryError,
-    database_error_code,
-    execute,
-)
+from app.constants import CONFIRMED, FORMING, LIVE_GROUP_STATES
+from app.repositories.base import RecordNotFoundError, RepositoryError, execute
 from app.repositories.buildings import COLUMNS as BUILDING_COLUMNS
+from app.timezones import APPLICATION_TIMEZONE
 
-COLUMNS = "id,on_date,start_time,end_time,building_id,mode,status,created_at"
+COLUMNS = (
+    "id,on_date,start_time,end_time,building_id,mode,status,created_at,"
+    "invite_expires_at,confirmed_at,status_changed_at"
+)
 
-# What a student is shown when the group is still forming. AGENTS.md: the
-# spot is hidden until the group is confirmed, and the card says
-# "Waiting for N more to confirm" instead.
 SPOT_HIDDEN = "To be announced"
 
 
@@ -36,24 +32,22 @@ class GroupRepository:
             "read upcoming groups",
         )
 
-    def list_open_for_date(self, on_date: date) -> list[dict[str, Any]]:
+    def list_for_matching_date(self, on_date: date) -> list[dict[str, Any]]:
         return execute(
             self.client.table("groups")
             .select(COLUMNS)
             .eq("on_date", on_date.isoformat())
-            .in_("status", list(LIVE_GROUP_STATES))
+            .in_("status", ["forming", "confirmed", "active"])
             .order("start_time")
             .order("id"),
-            "read existing groups for matching date",
+            "read groups for matching date",
         )
 
-    def list_from(self, on_date: date) -> list[dict[str, Any]]:
-        """Every live group from `on_date` onwards.
+    def list_open_for_date(self, on_date: date) -> list[dict[str, Any]]:
+        """Compatibility alias retained for older callers and tests."""
+        return self.list_for_matching_date(on_date)
 
-        The map and the projector both need all of them rather than one
-        student's, so they cannot go through list_upcoming, which filters by
-        membership.
-        """
+    def list_from(self, on_date: date) -> list[dict[str, Any]]:
         return execute(
             self.client.table("groups")
             .select(COLUMNS)
@@ -83,53 +77,44 @@ class GroupRepository:
         mode: str = "social",
         status: str = FORMING,
     ) -> dict[str, Any]:
-        def insert(stored_status: str) -> list[dict[str, Any]]:
-            return execute(
-                self.client.table("groups").insert(
-                    {
-                        "on_date": on_date.isoformat(),
-                        "start_time": start_time.isoformat(timespec="minutes"),
-                        "end_time": end_time.isoformat(timespec="minutes"),
-                        "building_id": building_id,
-                        "mode": mode,
-                        "status": stored_status,
-                    }
-                ),
-                "create matched group",
+        meeting_start = datetime.combine(
+            on_date,
+            start_time,
+            tzinfo=APPLICATION_TIMEZONE,
+        )
+        invite_expires_at = meeting_start - timedelta(minutes=10)
+        if invite_expires_at <= datetime.now(APPLICATION_TIMEZONE):
+            raise RepositoryError(
+                "Cannot create a group after its invitation deadline"
             )
-        try:
-            rows = insert(status)
-        except RepositoryError as exc:
-            if database_error_code(exc) != "23514" or status not in {
-                FORMING,
-                CONFIRMED,
-            }:
-                raise
-            rows = insert("proposed")
+        payload: dict[str, Any] = {
+            "on_date": on_date.isoformat(),
+            "start_time": start_time.isoformat(timespec="minutes"),
+            "end_time": end_time.isoformat(timespec="minutes"),
+            "building_id": building_id,
+            "mode": mode,
+            "status": status,
+            "invite_expires_at": invite_expires_at.isoformat(),
+        }
+        if status == CONFIRMED:
+            payload["confirmed_at"] = datetime.now(APPLICATION_TIMEZONE).isoformat()
+        rows = execute(
+            self.client.table("groups").insert(payload),
+            "create matched group",
+        )
         if not rows:
             raise RecordNotFoundError("Database did not return the created group")
         return rows[0]
 
     def set_status(self, group_id: str, status: str) -> None:
-        try:
-            execute(
-                self.client.table("groups").update({"status": status}).eq("id", group_id),
-                "update group status",
-            )
-        except RepositoryError as exc:
-            if database_error_code(exc) != "23514":
-                raise
-            legacy = {
-                FORMING: "proposed",
-                CONFIRMED: "proposed",
-                DISSOLVED: "cancelled",
-            }
-            if status not in legacy:
-                raise
-            execute(
-                self.client.table("groups").update({"status": legacy[status]}).eq("id", group_id),
-                "update legacy group status",
-            )
+        now = datetime.now(APPLICATION_TIMEZONE).isoformat()
+        payload: dict[str, Any] = {"status": status, "status_changed_at": now}
+        if status == CONFIRMED:
+            payload["confirmed_at"] = now
+        execute(
+            self.client.table("groups").update(payload).eq("id", group_id),
+            "update group status",
+        )
 
     def delete(self, group_id: str) -> None:
         execute(
@@ -143,8 +128,6 @@ class GroupRepository:
         return str(self.building(building_id)["name"])
 
     def building(self, building_id: int) -> dict[str, Any]:
-        """The full building row, because the map needs its coordinates and
-        its slug, not only the name."""
         rows = execute(
             self.client.table("buildings")
             .select(BUILDING_COLUMNS)

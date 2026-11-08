@@ -21,9 +21,14 @@ from supabase import Client
 
 from app import store
 from app.auth import onboarded_user
-from app.constants import CONFIRMED, MIN_GROUP_SIZE
+from app.constants import MIN_GROUP_SIZE
 from app.db import get_db_client
-from app.groups_view import checked_in_members, joined_members, live_members, state_for
+from app.groups_view import (
+    checked_in_members,
+    joined_members,
+    live_members,
+    spot_is_visible_to,
+)
 from app.models import BuildingActivity, MapResponse, MyGroupPin
 from app.repositories import RepositoryError
 from app.repositories.buildings import BuildingRepository
@@ -88,11 +93,11 @@ def get_map(
 
         if my_pin is not None:
             continue
-        mine = next(
-            (m for m in group_members if str(m["student_id"]) == student.id),
-            None,
-        )
-        if mine is None or state_for(group, group_members) != CONFIRMED:
+        # The same rule as the group card's meeting spot, from the same
+        # function: joined, and past forming. A pin carries the building's
+        # coordinates, so an invited-only caller getting one would leak more
+        # than the card does, not less.
+        if not spot_is_visible_to(group, group_members, student.id):
             continue
         building = buildings[int(building_id)]
         my_pin = MyGroupPin(

@@ -1,9 +1,10 @@
 # Hangout integration handoff
 
-- Snapshot date: 2026-11-07 (America/Vancouver)
+- Snapshot date: 2026-11-07 (America/Vancouver), revised the same day
+  after the lifecycle merge
 - Working branch: `feat/integrate`
-- Application snapshot: `3254815 Add HTTPS sharing and harden group check-in`
-- Base branch at snapshot: `main` and `origin/main` at `33a791a`
+- Application snapshot: the lifecycle merge described in section 8
+- Base branch at snapshot: `origin/main` at `04c0f46`
 - Worktree before this document: clean
 
 This is the standalone handoff for continuing this integration in Codex or
@@ -214,31 +215,55 @@ the data model has real walking distances.
 
 ## 5. Current database vocabulary
 
-The integration branch assumes `backend/sql/001_core_schema.sql` followed by
-`backend/sql/002_plan_alignment.sql`:
+`backend/sql/schema.sql` is the one schema file, and there are no migrations.
+The lifecycle branch replaced `001_core_schema.sql` and its own
+`002_group_lifecycle.sql` with a single canonical file for a fresh Supabase
+project, and the integration branch's `002_plan_alignment.sql` was deleted
+during the merge rather than carried forward. It had become a trap: it rewrote
+`group_members.response`, a column the canonical schema no longer has, and
+dropped `buildings.code_secret`, which the canonical schema requires. Running
+it against a current database would fail partway through.
+
+The vocabulary the code now reads and writes:
 
 - `groups.status`: `forming`, `confirmed`, `active`, `completed`, `dissolved`.
-- `group_members.response`: `invited`, `joined`, `declined`, `expired`.
-- `group_members.arrived_at`: independent check-in timestamp; API member state
-  becomes `checked_in` when a joined row has this value.
-- `student_spots`: ranked favourite building rows.
-- `buildings.code_secret`: removed because building QR codes were removed from
-  the product.
+- `groups.invite_expires_at`, `confirmed_at`, `status_changed_at`: the
+  lifecycle columns. `invite_expires_at` is NOT NULL and constrained to fall
+  before the meeting starts; `GroupRepository.create` sets it to ten minutes
+  before the start time.
+- `group_members.invitation_status`: `invited`, `accepted`, `declined`,
+  `expired`. This is the durable name and `accepted` is the durable value.
+- `group_members.arrived_at`: check-in timestamp, constrained to accepted
+  rows only. API member state becomes `checked_in` when an accepted row has
+  one.
+- `buildings.code_secret`: still present and NOT NULL. Nothing reads it. It
+  belonged to the building-QR idea the product dropped, and `app/demo.py`
+  seeds an inert `obsolete-<slug>` value so an insert can satisfy the
+  constraint without reviving the column's meaning.
+- `student_spots`: does not exist. Favourite spots live only in
+  `app/store.py`, alongside the rest of the split identity.
 
-Some repository methods deliberately fall back to the V1 values `proposed`,
-`pending`, and `skipped`. That compatibility is not support for the incoming
-`invitation_status` schema described later.
+`normalize_membership()` in `app/repositories/group_members.py` is the seam
+between the two vocabularies. Storage keeps `invitation_status`/`accepted`;
+every row read through the repository also carries the wire name `response`
+with the value `joined`, which is what the view layer and the three pages
+use. Nothing above the repository should read `invitation_status` directly.
 
-Before any further migration is applied, ask the backend teammate exactly
-which SQL migrations have already been run against the shared Supabase project.
-Git history alone cannot answer that question.
+Some repository methods still fall back to the V1 values `proposed`,
+`pending`, and `skipped`, for a database seeded before the lifecycle schema.
+
+A fresh project is installed from `schema.sql` alone. For a database that
+already holds data, ask the backend teammate what has been applied; Git
+history cannot answer that.
 
 ## 6. Privacy behavior already implemented
 
 - Open groups, map data, and projector data contain no student names.
 - Group first names are visible only to a joined caller and only for people
   who have joined; invitations do not disclose names.
-- Forming groups do not serialize their meeting spot.
+- The meeting spot is serialized only to a caller who has joined, and only
+  once the group is past forming. Both halves are required, and one
+  function, `spot_is_visible_to()`, is the only place they are decided.
 - Map building counts below `MIN_GROUP_SIZE` are omitted, not rounded or sent
   as a hidden frontend value.
 - The browser uses a single local geolocation fix only to center/bound Leaflet.
@@ -249,7 +274,7 @@ Git history alone cannot answer that question.
 - Check-in errors do not distinguish an expired signature from a forged or
   outside-group signature.
 
-## 7. Known implementation issues — record now, do not fix before backend merge
+## 7. Known implementation issues still open
 
 ### QR/check-in does not yet work reliably in the live demo
 
@@ -262,16 +287,18 @@ Required conditions for the current implementation are strict:
 
 1. Two distinct profiles/tokens must be used; using one's own code is rejected.
 2. Both profiles must be memberships of the same group.
-3. Both membership rows must have `response = "joined"`.
+3. Both membership rows must have `invitation_status = "accepted"`.
 4. The displayed `hc1...` code must be current and generated by a process using
    the same signing secret as the process validating it.
 5. The phone opening the camera must use the HTTPS tunnel, not a LAN HTTP URL.
 
-`GroupMemberRepository.mark_arrived()` silently skips a membership whose
-`response` is not exactly `joined`. This is the first seam to revisit after the
-lifecycle branch lands. The current endpoint also performs two row updates
-rather than one transaction; partial failure is possible and should be assessed
-against the teammate's transaction/RPC approach.
+`GroupMemberRepository.mark_arrived()` silently skips a membership that is
+not accepted, and `schema.sql` now enforces the same thing as a check
+constraint, so a check-in against a non-accepted row cannot half-succeed at
+the database either. The endpoint still performs two row updates rather than
+one transaction, so a partial failure remains possible. The lifecycle branch
+brought an atomic RPC for invitation responses; check-in has no equivalent yet
+and is the obvious next candidate for one.
 
 The correct future acceptance test is not another fake-only unit test. Use two
 separate phone/browser sessions against a disposable or agreed shared Supabase
@@ -285,20 +312,19 @@ An empty activity list can be valid under the current privacy rules. `GET /map`:
 - reads only groups dated today;
 - omits a public building until at least three distinct live members are there;
 - requires a valid seeded building row with coordinates;
-- returns the caller's meeting pin only when `state_for(...)` equals exactly
-  `confirmed`.
+- returns the caller's meeting pin only when that caller has joined the group
+  and the group is confirmed, active or completed.
 
-That last condition is a concrete likely defect: an already `active` group has
-a revealed meeting spot elsewhere in the UI but currently fails the exact
-`confirmed` comparison and receives no `my_group` pin. Revisit this after the
-teammate lifecycle states are authoritative.
+The two defects this section used to predict are fixed, with tests: the pin no
+longer disappears when a group becomes `active`, and it is no longer handed to
+a caller who has only been invited. See section 8.
 
 The tile layer itself is separate from backend activity. It uses Stadia only
 when allowed and otherwise OpenStreetMap. Approximate coordinates in
 `frontend/src/lib/mapConfig.js` and fixtures are explicitly unverified; the
 database building rows returned by `/map` are the runtime source of pin
-coordinates. A future diagnosis should separately test: tile loading, `/map`
-response data, group-state eligibility, seeded coordinates, and Leaflet render.
+coordinates. A diagnosis should separately test: tile loading, `/map` response
+data, group-state eligibility, seeded coordinates, and Leaflet render.
 
 ### Start-group and onboarding fixes need regression coverage after catalogs change
 
@@ -308,59 +334,73 @@ schema, preserve that single catalog source; do not restore a separate frontend
 list. Likewise, preserve canonical tag IDs and the old-draft aliases when the
 signup backend changes.
 
-## 8. Incoming teammate backend: do not merge blindly
+## 8. Teammate backend lifecycle merge: done
 
-The latest fetched backend work is `origin/feat/group-lifecycle` at `c77ad3f`
-(with earlier commit `181d748`). `origin/main` has not moved from `33a791a`.
+`origin/main` reached `04c0f46` (pull request #14, `feat/group-lifecycle`) and
+is merged into `feat/integrate`. The eleven overlapping files were resolved
+deliberately rather than by taking a side. The rule applied throughout: the
+pushed backend wins on storage and lifecycle naming, this branch wins on the
+HTTP shapes the three pages already consume, and the adapter between them is
+`normalize_membership()`.
 
-It overlaps this branch in eleven important files:
+What that meant in practice:
 
-```text
-README.md
-backend/app/matching.py
-backend/app/repositories/base.py
-backend/app/repositories/group_members.py
-backend/app/repositories/groups.py
-backend/app/routers/groups.py
-backend/app/routers/students.py
-backend/tests/fakes.py
-backend/tests/test_api_contracts.py
-backend/tests/test_matching.py
-backend/tests/test_security_and_errors.py
-```
+- `group_members.invitation_status` with `accepted` is the stored truth. The
+  wire keeps `response: "joined"`, `state`, `my_state`, `joined_count` and
+  `needs`, so no page had to learn a database column name.
+- `GET /me/now` keeps answering with the `{gap, group}` pair. The lifecycle
+  branch's `{"status": "waiting"}` shape was not adopted.
+- Invitation deadlines, expiry, dissolution and the time-driven
+  active/completed transitions come from the teammate's `app/lifecycle.py`
+  and the atomic invitation-response RPC.
+- The privacy serialization, map count hiding, check-in HMAC semantics,
+  canonical catalogs and demo reseed were all kept from this branch.
 
-The overlap is semantic, not just textual:
+Three defects were found and fixed while reconciling, each with a test that
+fails without the fix:
 
-- This branch stores `group_members.response` with `joined`; the teammate
-  branch renames the column to `invitation_status` and uses `accepted`.
-- This branch has `002_plan_alignment.sql`; the teammate branch independently
-  has `002_group_lifecycle.sql`.
-- The teammate migration adds `invite_expires_at`, `confirmed_at`, and
-  `status_changed_at`, plus an atomic invitation-response RPC.
-- The teammate code adds invitation deadlines, expiry/dissolution behavior,
-  time-driven active/completed transitions, and separate attendance derivation.
-- Both branches implement confirmation/member counting and repository methods,
-  so accepting either entire side during a conflict would discard required
-  behavior from the other.
+- **An invited caller could see the meeting spot.** `group_out` gated the
+  spot on the group's state alone, so a member who had not accepted still
+  received the building name on a confirmed group. The spot now needs the
+  caller to have joined as well. The teammate's
+  `test_remaining_invited_member_cannot_see_names_or_location` is what
+  surfaced this; it was failing for a different reason and the real bug was
+  behind it.
+- **`GET /map` leaked the same thing, with coordinates.** Its `my_group` pin
+  checked only that a membership row existed, not that it was accepted.
+- **`GET /map` dropped the pin when the meeting started.** The eligibility
+  test was an exact comparison against `confirmed`, so an `active` group got
+  no pin at the one moment its members need directions. This was predicted
+  in an earlier draft of this document and is now fixed.
 
-First determine what has been applied to Supabase. Then adopt the teammate
-backend's lifecycle/storage naming as the durable backend model, because the
-project contract says the pushed backend wins on naming. Adapt the existing
-frontend-facing API to that model so the pages do not need to learn database
-column names. Preserve from this branch: privacy serialization, map count
-hiding, check-in HMAC/API semantics, frontend response shapes, canonical
-catalogs, and demo behavior.
+All three now go through one predicate, `spot_is_visible_to()` in
+`app/groups_view.py`, so the three routes that answer "may this caller learn
+where the group is meeting" cannot drift apart again.
 
-Do not apply both `002` migrations in arbitrary order. Produce one reconciled,
-ordered migration path based on actual database state and test it on a disposable
-database before the shared project.
+`backend/tests/test_lifecycle_api.py` arrived with the lifecycle branch and
+needed adapting, not weakening. It seeded students into the Supabase fake
+only, but a guest token on this branch verifies against `app/store.py`, so
+every private route answered 401. Its `setUp` now mirrors the seeded students
+into the store, which is what `POST /students` does in production. Its
+assertions were renamed to this branch's wire vocabulary; every condition it
+checked is still checked.
+
+One feature was deliberately not carried over: `GroupOut` does not expose
+`invite_expires_at`, so the UI cannot yet show a "respond by" deadline even
+though the backend enforces one. Adding it is an API contract change and is
+left here rather than made quietly.
 
 ## 9. Verification already completed
 
 Current application snapshot verification:
 
-- Backend: 56 tests passed; one optional live Supabase integration test skipped.
-- Frontend: ESLint passed and the Vite production build completed (134 modules).
+- Backend: 100 tests passed, 6 skipped. The skips are the optional live
+  Supabase integration tests.
+- Frontend: ESLint passed and the Vite production build completed (134
+  modules), with the Leaflet chunk still split out at ~158 kB.
+- `npm run check:signup` passed all 17 route-gate checks.
+- Server-side render of `/`, `/map`, `/me` and `/projector` all succeeded
+  with no Leaflet in the output, so the lazy map import survived the merge.
 - Tunnel smoke test: a real temporary Cloudflare HTTPS URL returned 200 for `/`
   and for proxied `/api/health`.
 - Shell syntax and Git whitespace checks passed for the HTTPS script/change.
@@ -374,8 +414,9 @@ cd backend
 ```
 
 The live Supabase test is intentionally skipped unless explicitly enabled; the
-passing 56-test result is therefore not evidence that QR or map works against
-the shared database.
+passing 100-test result is therefore not evidence that QR or map works
+against the shared database. Every test above runs against the in-process
+fake.
 
 Frontend checks:
 
@@ -395,20 +436,32 @@ Share the printed `https://*.trycloudflare.com` URL and keep the terminal open.
 
 ## 10. Recommended continuation order
 
-1. Wait until the backend teammate says the lifecycle branch is ready.
-2. Fetch it and re-check its head; do not assume `c77ad3f` remains final.
-3. Ask which migrations have been applied to the shared Supabase project.
-4. Integrate the lifecycle/storage model into `feat/integrate`, resolving the
-   eleven overlaps deliberately and preserving both sides' working behavior.
-5. Reconcile the migrations before changing QR or map adapters.
-6. Update group serializers, check-in writes, and map state eligibility to the
-   final lifecycle vocabulary while keeping the frontend HTTP shapes stable.
-7. Run the automated suites and a disposable-database migration/integration
-   pass.
-8. Run the full `docs/AGENTS.md` demo on HTTPS at a 390px phone viewport,
-   including two distinct guests checking each other in and map/projector count
-   updates.
-9. Merge to `main` only when the demo spine passes end to end.
+Steps 1 to 6 of the previous version of this list are done; see section 8.
+What is left:
+
+1. Ask the backend teammate whether the shared Supabase project has been
+   reinstalled from `sql/schema.sql`. Everything below assumes it has. Git
+   history cannot answer this.
+2. Install `sql/schema.sql` on a disposable project and run the live
+   integration tests against it, with `RUN_SUPABASE_INTEGRATION=1` and the
+   two confirmation variables in `.env.example`. This is the first real
+   evidence that the merged code and the schema agree.
+3. Run the full `docs/AGENTS.md` demo over HTTPS at a 390px phone viewport:
+   two distinct guests, the same confirmed group, a check-in scanned in both
+   directions, and the Right now, map and projector counts all moving.
+4. Verify the UBC coordinates in `frontend/src/lib/mapConfig.js` and in the
+   seeded `buildings` rows against a real map. They are all still
+   approximate and unverified, and the map is a judged surface.
+5. Send `courses` from `createStudent` in `frontend/src/lib/api.js`. The
+   backend accepts and validates the field, so shared-course matching has no
+   data until onboarding collects it, and "you both take STAT 302" is the
+   strongest line on a group card.
+6. Decide whether `GroupOut` should carry `invite_expires_at`. The backend
+   enforces the deadline; the UI cannot show it.
+7. Retire the split identity by moving `app/store.py` into Supabase. The
+   columns already exist. This is the largest piece of demo-grade debt on the
+   branch, and it is what makes a backend restart lose guest profiles.
+8. Merge to `main` only when step 3 passes end to end.
 
 Until then, do not merge or push this integration branch to `main` merely
 because its unit tests and build pass. The known live-data seams are the core
