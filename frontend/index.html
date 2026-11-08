@@ -10,8 +10,24 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#00162e" media="(prefers-color-scheme: dark)" />
+    <!-- One value, rewritten by src/lib/theme.js, because the colour scheme
+         is the app's choice now and not the phone's. -->
+    <meta name="theme-color" content="#ffffff" />
+    <!-- Before first paint, on purpose. Reading the saved choice from React
+         would mean the app renders light for a frame and then flips, which
+         on a phone reads as a flash of the wrong app. Inline and tiny so it
+         costs nothing, and wrapped because storage throws in private mode.
+         Keep the key in step with THEME_KEY in src/lib/theme.js. -->
+    <script>
+      try {
+        var t = localStorage.getItem('hangout.theme')
+        if (t !== 'dark') t = 'light'
+        document.documentElement.setAttribute('data-theme', t)
+        if (t === 'dark') {
+          document.querySelector('meta[name="theme-color"]').content = '#00162e'
+        }
+      } catch (e) {}
+    </script>
     <meta
       name="description"
       content="Find a small group of UBC students free in your next gap between classes, and a campus building to meet in."
