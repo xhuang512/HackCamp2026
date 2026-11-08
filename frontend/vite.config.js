@@ -10,7 +10,7 @@ export default defineConfig({
     // in dev means no CORS preflight and no hardcoded port in the app code.
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:5186',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
