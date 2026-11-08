@@ -78,7 +78,7 @@ class ReferenceDataTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        student_id = response.json()["student_id"]
+        student_id = response.json()["student"]["id"]
         language_links = [
             row
             for row in self.database.tables["student_languages"]
@@ -158,7 +158,8 @@ class ReferenceDataTests(unittest.TestCase):
                 "tags": tags or [],
                 "languages": languages or [],
                 "courses": courses or [],
-                "preset_schedule": "tue_thu_afternoon",
+                "preset_id": "tue-thu-afternoons",
+                "guest": True,
             },
         )
 

@@ -120,83 +120,13 @@ class NoSuggestionError(Exception):
     """Raised when an authenticated student has no current suggestion."""
 
 
-@router.post(
-    "/students",
-    response_model=StudentSession,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a demo student",
-    description=(
-        "Persists a student and preset free blocks, then returns a signed guest session."
-    ),
-)
-def create_student(
-    student: StudentCreate,
-    client: Annotated[Client, Depends(get_db_client)],
-) -> StudentSession:
-    ensure_guest_sessions_configured()
-    try:
-        blocks = resolve_preset(student.preset_schedule)
-    except ReferenceDataError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
-    term = os.getenv("CURRENT_TERM")
-    if student.courses and not term:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="CURRENT_TERM is required to persist student courses",
-        )
-    try:
-        course_codes = normalize_course_codes(student.courses)
-    except ReferenceDataError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
-
-    students = StudentRepository(client)
-    free_blocks = FreeBlockRepository(client)
-    created: dict[str, Any] | None = None
-    try:
-        created = students.create(student.first_name)
-        student_id = str(created["id"])
-        students.add_tags(student_id, student.tags)
-        students.add_languages(student_id, student.languages)
-        students.add_courses(student_id, course_codes, term or "")
-        free_blocks.create_for_student(student_id, blocks)
-    except ReferenceDataError as exc:
-        _rollback_student(students, created)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
-    except RepositoryError as exc:
-        _rollback_student(students, created)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not persist student onboarding",
-        ) from exc
-
-    for target_date in next_matching_dates({block.day for block in blocks}):
-        try:
-            run_matching(client, target_date, persist=True)
-        except RepositoryError:
-            # Onboarding has already succeeded. A later signup or the batch CLI
-            # can retry this student without forcing duplicate registration.
-            logger.exception(
-                "Automatic matching failed after creating student %s for %s",
-                student_id,
-                target_date,
-            )
-
-    return StudentSession(
-        student_id=student_id,
-        first_name=str(created["first_name"]),
-        session_token=create_guest_session(student_id),
-        is_guest=True,
-    )
-
+# POST /students used to live here. It now lives in routers/identity.py,
+# because the frontend sends the signup branch's richer body
+# (preset_id/free_blocks, ask_me_about, visibility, guest) and expects
+# {student, aha, guest_token} back, which this version did not return.
+# The Supabase student repository has no identity columns wired up yet, so
+# the surviving implementation is the store.py one. Porting it is the job
+# that retires that split.
 
 @router.get(
     "/me/now",

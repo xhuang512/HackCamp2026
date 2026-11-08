@@ -233,7 +233,7 @@ class AutomaticMatchingTests(unittest.TestCase):
         for session in sessions:
             suggestion = self.client.get(
                 "/me/now",
-                headers={"Authorization": f"Bearer {session['session_token']}"},
+                headers={"Authorization": f"Bearer {session['guest_token']}"},
             )
             self.assertEqual(suggestion.status_code, 200)
             self.assertEqual(suggestion.json()["group"]["members"], [])
@@ -247,6 +247,7 @@ class AutomaticMatchingTests(unittest.TestCase):
             "/students",
             json={
                 "first_name": name,
-                "preset_schedule": "tue_thu_afternoon",
+                "preset_id": "tue-thu-afternoons",
+                "guest": True,
             },
         )

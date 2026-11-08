@@ -161,6 +161,19 @@ def upsert(
     return student
 
 
+def put(student: Student) -> Student:
+    """Insert or replace a student by id, linking its auth_sub if it has one.
+
+    For seeds and tests, which need a student with a known id. upsert() mints
+    a fresh uuid, so it cannot be used to place a student that a token has
+    already been signed for.
+    """
+    _students[student.id] = student
+    if student.auth_sub is not None:
+        _by_sub[student.auth_sub] = student.id
+    return student
+
+
 def link_sub(auth_sub: str, student_id: str) -> None:
     """Point an identity at an existing student.
 

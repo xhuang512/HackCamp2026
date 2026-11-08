@@ -4,6 +4,7 @@ from unittest.mock import patch
 import jwt
 from fastapi.testclient import TestClient
 
+from app import auth, store
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.main import app
@@ -25,6 +26,15 @@ class ApiContractTests(unittest.TestCase):
             clear=True,
         )
         self.environment.start()
+        store.reset()
+        store.put(
+            store.Student(
+                id="s_current",
+                first_name="Current",
+                auth_sub="guest:s_current",
+                is_guest=True,
+            )
+        )
         self.database = FakeSupabase()
         app.dependency_overrides[get_db_client] = lambda: self.database
         self.session_token = create_guest_session("s_current")
@@ -48,27 +58,26 @@ class ApiContractTests(unittest.TestCase):
                 "tags": ["transfer"],
                 "languages": ["English"],
                 "courses": ["STAT 302"],
-                "preset_schedule": "tue_thu_afternoon",
+                "preset_id": "tue-thu-afternoons",
+                "guest": True,
             },
         )
 
         self.assertEqual(response.status_code, 201)
         body = response.json()
-        self.assertEqual(body["first_name"], "Maya")
-        self.assertTrue(body["is_guest"])
-        self.assertEqual(
-            jwt.decode(
-                body["session_token"],
-                "test-only-secret-that-is-at-least-32-bytes",
-                algorithms=["HS256"],
-                issuer="hangout-api",
-            )["sub"],
-            body["student_id"],
-        )
+        student_id = body["student"]["id"]
+        self.assertEqual(body["student"]["first_name"], "Maya")
+
+        # The guest token is no longer a JWT. It is
+        # `guest.<student_id>.<expiry>.<signature>`, signed over the id and
+        # the expiry together, and it only verifies while that student
+        # exists. read_guest_token is the one thing that should parse it.
+        self.assertEqual(auth._read_guest_token(body["guest_token"]), student_id)
+
         persisted_blocks = [
             row
             for row in self.database.tables["free_blocks"]
-            if row["student_id"] == body["student_id"]
+            if row["student_id"] == student_id
         ]
         self.assertEqual(
             [(row["day"], row["start_time"], row["end_time"]) for row in persisted_blocks],
@@ -87,7 +96,8 @@ class ApiContractTests(unittest.TestCase):
             "/students",
             json={
                 "first_name": "M" * 41,
-                "preset_schedule": "tue_thu_afternoon",
+                "preset_id": "tue-thu-afternoons",
+                "guest": True,
             },
         )
 

@@ -81,6 +81,10 @@ class CreateStudentRequest(BaseModel):
     free_blocks: list[FreeBlockIn] | None = None
     tags: list[str] = Field(default_factory=list, max_length=10)
     languages: list[str] = Field(default_factory=list, max_length=10)
+    # UBC-style course codes, normalized server side: "stat406" becomes
+    # "STAT 406". The matcher's strongest shared signal, so losing these
+    # costs every "you both take STAT 302" suggestion.
+    courses: list[str] = Field(default_factory=list, max_length=10)
     ask_me_about: str | None = Field(default=None, max_length=120)
     visibility: Visibility = "everyone"
     guest: bool = False

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app import store
 from app.auth import create_guest_session
 from app.db import DatabaseConfigurationError, create_supabase_client, get_db_client
 from app.main import app
@@ -20,6 +21,15 @@ class SecurityAndErrorTests(unittest.TestCase):
             clear=True,
         )
         self.environment.start()
+        store.reset()
+        store.put(
+            store.Student(
+                id="s_current",
+                first_name="Current",
+                auth_sub="guest:s_current",
+                is_guest=True,
+            )
+        )
         self.database = FakeSupabase()
         app.dependency_overrides[get_db_client] = lambda: self.database
         self.client = TestClient(app)
@@ -33,7 +43,9 @@ class SecurityAndErrorTests(unittest.TestCase):
         response = self.client.get("/me/now")
 
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json(), {"detail": "A guest session token is required"})
+        # Wording comes from the merged auth module, which answers every
+        # unauthenticated call the same way.
+        self.assertEqual(response.json(), {"detail": "Sign in to do that."})
 
     def test_authenticated_student_without_suggestion_gets_waiting_state(self) -> None:
         self.database.tables["groups"] = []
@@ -80,6 +92,18 @@ class SecurityAndErrorTests(unittest.TestCase):
         self.assertEqual(len(self.database.tables["students"]), original_count)
 
     def test_membership_for_another_student_cannot_be_updated(self) -> None:
+        # A real signed-in student who is simply not in this group. The point
+        # is the 404 from the membership check, so the student has to exist:
+        # an unknown id now stops at the token check with a 401 and never
+        # reaches the router.
+        store.put(
+            store.Student(
+                id="not-a-member",
+                first_name="Other",
+                auth_sub="guest:not-a-member",
+                is_guest=True,
+            )
+        )
         token = create_guest_session("not-a-member")
         response = self.client.post(
             "/groups/g_41/skip",
