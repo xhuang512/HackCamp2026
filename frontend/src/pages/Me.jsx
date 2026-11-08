@@ -4,6 +4,8 @@ import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
 import { STUDENT_TAGS } from '../lib/presets.js'
+import { setTheme } from '../lib/theme.js'
+import useColorScheme from '../lib/useColorScheme.js'
 import Icon from '../components/Icon.jsx'
 import { badgeArt } from '../lib/badgeArt.js'
 import StateCard from '../components/StateCard.jsx'
@@ -60,6 +62,11 @@ export default function Me() {
      arrival: it lives in the history entry, so it is gone on the next open
      and there is no flag to clear. */
   const savedBlocks = useLocation().state?.scheduleSaved ?? null
+
+  /* Not part of the profile. It is a per-phone preference, saved in
+     localStorage, so it never goes near PATCH /me and a student signing in
+     on a borrowed phone does not change how their own one looks. */
+  const scheme = useColorScheme()
 
   /* The canonical tag list, the same source onboarding reads. A second
      hardcoded list here is how the two drift until a saved tag stops
@@ -186,6 +193,24 @@ export default function Me() {
                 </select>
               </label>
               <p className="row__meta">Other students only see that you&apos;re free and the tags on your profile.</p>
+            </section>
+
+            {/* A per-phone preference, not part of the profile: it is saved
+                in localStorage and never reaches PATCH /me, so signing in on
+                a borrowed phone does not restyle anyone else's. */}
+            <section className="rd-card rd-card--section">
+              <h2 className="rd-card__title">Appearance</h2>
+              <p className="rd-card__meta">
+                Saved on this phone. It does not follow your system setting.
+              </p>
+              <button
+                type="button"
+                className="rd-toggle"
+                aria-pressed={scheme === 'dark'}
+                onClick={() => setTheme(scheme === 'dark' ? 'light' : 'dark')}
+              >
+                Dark mode · {scheme === 'dark' ? 'On' : 'Off'}
+              </button>
             </section>
 
             {/* Logging out clears the Auth0 session and any guest token, then

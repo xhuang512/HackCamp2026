@@ -39,70 +39,28 @@
   margin: 0 auto;
   background: var(--c-surface);
   border-top: 1px solid var(--c-border);
-  /* Tighter than before. The bar is navigation, not a surface that needs
-     breathing room, and every pixel here is taken from the screen above it. */
-  padding: var(--s-2) var(--s-3) calc(var(--s-3) + env(safe-area-inset-bottom));
+  /* Icons only, so the bar is as short as the touch floor allows. */
+  padding: var(--s-1) var(--s-3) calc(var(--s-2) + env(safe-area-inset-bottom));
 }
 
 .tabbar__link {
-  /* 48px keeps the whole link above the 44px touch floor even though the
-     bar itself is now shorter. */
+  /* The whole cell is the target, so there is no small icon to aim at. */
   min-height: 48px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
   text-decoration: none;
   color: var(--c-ink-3);
-  font-weight: var(--w-medium);
 }
 
-/* The pill sits behind the icon and fills in on the active tab. Sized here
-   rather than on the svg so the shape does not move when the icon does. */
-.tabbar__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 26px;
-  border-radius: var(--r-pill);
-  background: transparent;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
-}
-
-/* Small and quiet. The icon carries the meaning; the word is there so a
-   first-time student is never guessing, which is why it shrinks rather than
-   disappearing. The link's accessible name is the full label either way. */
-.tabbar__label {
-  font-size: var(--t-10);
-  line-height: 1.1;
-  letter-spacing: 0.01em;
-}
-
-/* Three signals, not one: colour, weight and the filled pill. Colour alone
-   is not enough for anyone who cannot separate the accent from muted ink. */
+/* Colour is reinforcement. The active tab is already a filled icon, which
+   is the signal that survives without colour vision. */
 .tabbar__link.is-active {
   color: var(--c-accent);
-  font-weight: var(--w-semibold);
 }
 
-.tabbar__link.is-active .tabbar__icon {
-  background: var(--c-accent-soft);
-}
-
-/* The bar is a control, so it answers a press even where hover does not
-   exist. Opacity rather than a background, because every soft token in the
-   palette resolves to --mist, so a tinted pressed state would be
-   indistinguishable from the active one. */
 .tabbar__link:active {
   opacity: 0.6;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tabbar__icon {
-    transition: none;
-  }
 }
 
 /* ---------- Screen header ---------- */

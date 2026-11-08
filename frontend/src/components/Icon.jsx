@@ -2,6 +2,33 @@
    Decorative by default: pass a `label` only when the icon is the sole
    content of a control and nothing else names it. */
 
+/* Solid silhouettes of the three navigation icons. The tab bar uses these
+   to mark the active tab by SHAPE rather than by colour alone, which is
+   what keeps an icon-only bar readable without the labels. */
+const FILLED = {
+  group: (
+    <>
+      <circle cx="9.2" cy="8.4" r="3.6" />
+      <path d="M2.6 19.8c1.1-3.5 3.6-5.2 6.6-5.2s5.5 1.7 6.6 5.2z" />
+      <path d="M16.1 5.4a3.2 3.2 0 0 1 0 7.4 4.4 4.4 0 0 0 0-7.4z" />
+      <path d="M17.6 14.6c1.9.6 3.2 2 3.8 3.8h-3.2a9.3 9.3 0 0 0-1.9-3.6z" />
+    </>
+  ),
+  map: (
+    <>
+      <path d="M8.6 3.6 3 5.7v14.7l5.6-2.1z" />
+      <path d="M9.9 3.6v14.7l4.2 1.4V5z" />
+      <path d="M15.4 5v14.7L21 17.6V2.9z" />
+    </>
+  ),
+  person: (
+    <>
+      <circle cx="12" cy="8.2" r="4" />
+      <path d="M4.4 20.4c1.3-3.8 4.2-5.6 7.6-5.6s6.3 1.8 7.6 5.6z" />
+    </>
+  ),
+}
+
 const PATHS = {
   clock: (
     <>
@@ -55,8 +82,11 @@ const PATHS = {
   ),
 }
 
-export default function Icon({ name, size = 22, label }) {
-  const paths = PATHS[name]
+export default function Icon({ name, size = 22, label, filled = false }) {
+  /* A filled variant is only drawn where one exists. Asking for one that
+     does not falls back to the stroke icon rather than rendering nothing. */
+  const solid = filled ? FILLED[name] : undefined
+  const paths = solid ?? PATHS[name]
   if (paths === undefined) return null
 
   return (
@@ -64,8 +94,8 @@ export default function Icon({ name, size = 22, label }) {
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
+      fill={solid === undefined ? 'none' : 'currentColor'}
+      stroke={solid === undefined ? 'currentColor' : 'none'}
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"

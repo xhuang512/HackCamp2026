@@ -1,16 +1,17 @@
 import { NavLink } from 'react-router-dom'
 import Icon from './Icon.jsx'
 
-/* The bottom bar: an icon above each label.
+/* The bottom bar: three icons, no visible labels.
 
-   The icon is decorative, not the label. A bar that is icons alone asks
-   every new student to guess, and the three destinations here are not
-   conventional enough to guess, so the words stay and the icon is
-   recognition rather than the only cue.
+   Instagram-minimal, as asked. The label still exists for anyone who cannot
+   see the icon: it is in the link's accessible name through an sr-only span,
+   so a screen reader reads "Groups, current page" rather than "link".
 
-   The active tab is marked three ways on purpose: colour, weight, and a
-   tinted pill behind the icon. Colour alone fails for anyone who cannot
-   separate the accent from the muted ink. */
+   The active tab is marked by a FILLED icon, not by colour. That matters
+   here more than usual, because with the words gone colour would otherwise
+   be the only signal, and this project is entered in the Most Accessible
+   Design track. The filled shape reads for everyone; the accent colour is
+   reinforcement on top of it. */
 const TABS = [
   { to: '/', label: 'Groups', icon: 'group' },
   { to: '/map', label: 'Map', icon: 'map' },
@@ -31,11 +32,11 @@ export default function TabBar() {
         >
           {({ isActive }) => (
             <>
-              <span className="tabbar__icon">
-                <Icon name={icon} size={22} />
+              <Icon name={icon} size={26} filled={isActive} />
+              <span className="sr-only">
+                {label}
+                {isActive ? ' (current page)' : ''}
               </span>
-              <span className="tabbar__label">{label}</span>
-              {isActive && <span className="sr-only"> (current page)</span>}
             </>
           )}
         </NavLink>
