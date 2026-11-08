@@ -540,6 +540,22 @@
   gap: var(--s-6);
 }
 
+.me-id__edit {
+  /* Pushed to the trailing edge of the identity row, clear of the name and
+     the tag line. */
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.me-edit__actions {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.me-edit__actions .btn {
+  flex: 1;
+}
+
 .me-id__avatar {
   width: 64px;
   height: 64px;

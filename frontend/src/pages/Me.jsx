@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
+import { STUDENT_TAGS } from '../lib/presets.js'
 import ScreenHeader from '../components/ScreenHeader.jsx'
 import StateCard from '../components/StateCard.jsx'
 import Icon from '../components/Icon.jsx'
@@ -14,12 +15,11 @@ import Icon from '../components/Icon.jsx'
      - tags are the only thing other students see, beside the free block
      - pause and visibility are always respected by matching */
 
-const TAG_LABELS = {
-  international: 'International',
-  transfer: 'Transfer',
-  exchange: 'Exchange',
-  commuter: 'Commuter',
-}
+/* PATCH /me's own limits, from PatchMeRequest in backend/app/models.py.
+   Enforced here so a too-long name is caught before the request rather than
+   coming back as a 422 the student has to decode. */
+const NAME_MAX = 40
+const TAGS_MAX = 10
 
 export default function Me() {
   const { data, error, loading, reload } = useAsync(api.getMe)
@@ -28,6 +28,39 @@ export default function Me() {
   const [pausing, setPausing] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [actionError, setActionError] = useState(null)
+
+  /* The canonical tag list, the same source onboarding reads. A second
+     hardcoded list here is how the two drift until a saved tag stops
+     matching the catalog and is silently dropped. presets.js is the offline
+     fallback, not a parallel truth. */
+  const catalog = useAsync(api.getOptions)
+  const tagOptions =
+    catalog.data?.tags ??
+    STUDENT_TAGS.map((tag) => ({ id: tag.slug, label: tag.label }))
+  const labelFor = (id) => tagOptions.find((tag) => tag.id === id)?.label ?? id
+
+  /* null means the editor is closed. Opening it seeds the fields from the
+     student loaded at that moment, which is why there is no effect syncing
+     the two: there is no second copy of the profile sitting around going
+     stale while GET /me reloads underneath it. */
+  const [edit, setEdit] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const saveProfile = useCallback(async () => {
+    setSaving(true)
+    setActionError(null)
+    try {
+      await api.patchMe({ first_name: edit.first_name.trim(), tags: edit.tags })
+      setEdit(null)
+      reload()
+    } catch (err) {
+      /* The editor stays open with their text in it. Closing it on failure
+         would throw the edit away and leave them guessing what was saved. */
+      setActionError(err)
+    } finally {
+      setSaving(false)
+    }
+  }, [edit, reload])
 
   const togglePause = useCallback(
     async (paused) => {
@@ -89,10 +122,100 @@ export default function Me() {
                 {student.first_name}
               </span>
               <span className="screen-head__eyebrow">
-                {student.is_guest ? 'Guest · ' : ''}{student.tags.map((t) => TAG_LABELS[t] ?? t).join(' · ')}
+                {student.is_guest ? 'Guest · ' : ''}{student.tags.map(labelFor).join(' · ')}
               </span>
             </div>
+            {edit === null && (
+              <button
+                type="button"
+                className="btn btn--ghost me-id__edit"
+                onClick={() => setEdit({ first_name: student.first_name, tags: student.tags })}
+              >
+                Edit
+              </button>
+            )}
           </div>
+
+          {edit !== null && (
+            <div className="section">
+              <h2 className="section__title">Edit profile</h2>
+
+              <label className="field settings-field">
+                <span className="field__label">First name</span>
+                <input
+                  className="field__input"
+                  type="text"
+                  autoComplete="given-name"
+                  maxLength={NAME_MAX}
+                  value={edit.first_name}
+                  disabled={saving}
+                  onChange={(e) => setEdit({ ...edit, first_name: e.target.value })}
+                />
+              </label>
+
+              <fieldset className="choices">
+                <legend className="field__label">
+                  You are. This is the only thing other students see about you,
+                  beside the hours you are free.
+                </legend>
+                <div className="chips">
+                  {tagOptions.map((tag) => {
+                    const on = edit.tags.includes(tag.id)
+                    return (
+                      <label key={tag.id} className={on ? 'chip chip--on' : 'chip'}>
+                        <input
+                          type="checkbox"
+                          className="choice__input"
+                          checked={on}
+                          /* The cap is PATCH /me's, so the last box simply
+                             cannot be ticked rather than the save failing. */
+                          disabled={saving || (!on && edit.tags.length >= TAGS_MAX)}
+                          onChange={(e) =>
+                            setEdit({
+                              ...edit,
+                              tags: e.target.checked
+                                ? [...edit.tags, tag.id]
+                                : edit.tags.filter((t) => t !== tag.id),
+                            })
+                          }
+                        />
+                        <span>{tag.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              {catalog.error && (
+                <p className="note note--sm">
+                  Showing the built-in tag list, because the catalog did not
+                  load. Saving still works.
+                </p>
+              )}
+
+              <div className="me-edit__actions">
+                <button
+                  type="button"
+                  className="btn btn--primary btn--lg"
+                  disabled={saving || edit.first_name.trim() === ''}
+                  onClick={saveProfile}
+                >
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--lg"
+                  disabled={saving}
+                  onClick={() => {
+                    setEdit(null)
+                    setActionError(null)
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="section">
             <h2 className="section__title">Settings</h2>
