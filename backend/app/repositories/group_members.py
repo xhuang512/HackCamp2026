@@ -171,6 +171,20 @@ class GroupMemberRepository:
             changed += int(bool(rows))
         return changed
 
+    def expire_invited(self, group_id: str, student_ids: tuple[str, ...]) -> int:
+        """Expire only invitations that are still unanswered."""
+        if not student_ids:
+            return 0
+        rows = execute(
+            self.client.table("group_members")
+            .update({"invitation_status": "expired"})
+            .eq("group_id", group_id)
+            .in_("student_id", list(student_ids))
+            .eq("invitation_status", "invited"),
+            "expire group invitations",
+        )
+        return len(rows)
+
     def _list(self, query: Any, operation: str) -> list[dict[str, Any]]:
         return [normalize_membership(row) for row in execute(query, operation)]
 
