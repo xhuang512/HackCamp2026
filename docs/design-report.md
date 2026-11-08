@@ -315,9 +315,17 @@ two-window limit. Together those put a blind guess at roughly ten chances in a
 million for the 30 seconds a code stays current.
 
 **The gap that remains is request rate.** Nothing limits how fast
-`POST /groups/{id}/checkin` can be called. A short code wants a limiter in
-front of it, and that belongs in the deployment rather than in this pass. It
-is the first item in "For the backend owner" below.
+`POST /groups/{id}/checkin` can be called, so a limiter belongs in front of
+it. It is the first item in "For the backend owner" below.
+
+Worth sizing properly rather than leaving it at the bit count, which sounds
+worse than it is. The endpoint needs a valid session **and** membership of
+the group being guessed at, so an attacker is already inside the group. At
+ten chances in a million per try, even odds take roughly **70,000 requests
+inside the 60 seconds** a code stays acceptable. And the prize is a false
+check-in for someone who is already a groupmate, which inflates the hangout
+count rather than revealing anything or letting a stranger in. Real, bounded,
+and still worth the limit.
 
 Four tests cover it: a spaced `482 716` checks a groupmate in, a genuine code
 from outside the group is refused, a wrong six digits is refused, and the
@@ -352,6 +360,27 @@ the primary button in the accent, and all four callsites already said
 
 Every button radius is now 8px. It was 12px on `.btn` and 14px on the two
 larger sizes.
+
+### This branch is what ubcmeet.fit serves
+
+Not a merge, and worth knowing before committing anything else here. The
+three launchd agents run with `--serve-from` pointed at this checkout, so
+`uvicorn` runs this branch's Python directly and `vite preview` serves
+`frontend/dist` from this working tree. Nothing goes through `feat/integrate`
+or `main`.
+
+Neither service reloads, on purpose. Every commit is one restart away from
+being public:
+
+```
+cd ../HackCamp2026-deploy && ./deploy/install.sh --serve-from ~/Documents/Files/Code/HackCamp2026
+# or one service:
+launchctl kickstart -k "gui/$(id -u)/fit.ubcmeet.frontend"
+```
+
+Verified live at `c7a5fbd`: the bundle is `index-CXrIWGB8.js`, the Inter
+latin woff2 returns 200, and `CheckInCodeOut` is
+`['code', 'typed', 'expires_in']`.
 
 ### Verification
 
@@ -421,7 +450,9 @@ New from this pass, on top of the thirteen items in
 
 1. **Rate limit `POST /groups/{id}/checkin`.** The typed code is six digits
    now. Nothing throttles guesses, and that is the one mitigation the design
-   of the code itself cannot provide.
+   of the code itself cannot provide. Sized above: about 70,000 requests in a
+   60-second window for even odds, from a caller who is already a member of
+   the group, to win a false check-in. Not urgent, worth doing.
 2. **`OpenGroupOut` has no `joined_count`.** It blocks the attendee row the
    8138:2 frame draws on every open-group card. `seats_left` alone cannot
    stand in, because turning it into a count needs the group's capacity.

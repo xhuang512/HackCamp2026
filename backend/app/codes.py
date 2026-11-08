@@ -27,10 +27,19 @@ five people over two time windows. A guess is therefore worth roughly ten
 chances in a million for the 30 seconds it stays current.
 
 That is fine for a code read out across a table and would not be fine as the
-only check-in mechanism. The remaining gap is request rate: nothing here
-limits how fast POST /groups/{id}/checkin can be called, and a short code
-wants a limiter in front of it. Recorded in docs/design-report.md rather than
-built, because it is infrastructure rather than design.
+only check-in mechanism.
+
+What a guessing attack actually costs, because the bare bit count makes it
+sound worse than it is. The endpoint needs a valid session AND membership of
+the group being guessed at, so the attacker is already inside the group. At
+ten chances in a million per try, even odds take about 70,000 requests inside
+the 60 seconds a code stays acceptable. And the prize is a false check-in for
+someone who is already a groupmate, which inflates the hangout count rather
+than revealing anything or letting a stranger in.
+
+So: real, bounded, and worth a rate limit on POST /groups/{id}/checkin, which
+is the one mitigation the code itself cannot provide. Not built here, because
+a limiter belongs in the serving layer. Recorded in docs/design-report.md.
 
 The group id is not in the payload. It comes from the URL the code is posted
 to, and the backend checks that both students are members of that group. That
