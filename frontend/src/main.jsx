@@ -1,10 +1,21 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
+import { AuthProvider } from './lib/auth.jsx'
+
+/* AuthProvider sits outside the router because Auth0 handles its redirect
+   callback on whatever URL the student came back to, before any route
+   matches. Inside the router it would remount on the first navigation and
+   lose that callback. */
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <AuthProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AuthProvider>
   </StrictMode>,
 )
