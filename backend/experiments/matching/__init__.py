@@ -2,6 +2,7 @@
 
 from .similarity import SimilarityWeights
 from .strategies import (
+    FeasibleGreedyStrategy,
     MatchGroup,
     MatchingOutcome,
     ProductionGreedyStrategy,
@@ -13,6 +14,7 @@ from .synthetic_data import AvailabilityInterval, SyntheticDataset, SyntheticStu
 
 __all__ = [
     "AvailabilityInterval",
+    "FeasibleGreedyStrategy",
     "MatchGroup",
     "MatchingOutcome",
     "ProductionGreedyStrategy",

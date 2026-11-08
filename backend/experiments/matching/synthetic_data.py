@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from random import Random
 from typing import Iterable
 
@@ -96,6 +96,13 @@ AVAILABILITY_TEMPLATES = (
     (16 * 60, 18 * 60),
 )
 
+ATTRIBUTE_VARIANTS = (
+    "strong_clustered",
+    "weakly_correlated",
+    "permuted",
+    "sparse",
+)
+
 
 def generate_dataset(
     population_size: int,
@@ -123,6 +130,59 @@ def generate_dataset(
         for index in range(population_size)
     )
     return SyntheticDataset(students, seed, overlap_profile, attribute_profile)
+
+
+def derive_attribute_variant(
+    dataset: SyntheticDataset,
+    profile: str,
+    *,
+    seed: int,
+) -> SyntheticDataset:
+    """Change attribute signal while preserving schedules and non-attributes.
+
+    ``weakly_correlated`` independently shuffles half of each feature's profile
+    bundles. ``permuted`` independently shuffles every feature bundle. Both
+    preserve exact feature-value frequencies. ``sparse`` models missing input
+    by dropping most values and intentionally does not preserve frequencies.
+    """
+    if profile not in ATTRIBUTE_VARIANTS:
+        raise ValueError(
+            "attribute variant must be one of " + ", ".join(ATTRIBUTE_VARIANTS)
+        )
+    if profile == "strong_clustered":
+        return replace(dataset, attribute_profile=profile)
+
+    rng = Random(seed)
+    students = list(dataset.students)
+    features = ("tags", "courses", "languages", "interests")
+    replacements: dict[str, list[frozenset[str]]] = {}
+    if profile in {"weakly_correlated", "permuted"}:
+        fraction = 0.5 if profile == "weakly_correlated" else 1.0
+        for feature in features:
+            values = [getattr(student, feature) for student in students]
+            replacements[feature] = _permute_bundles(values, rng, fraction)
+    else:
+        for feature in features:
+            replacements[feature] = [
+                _sparsify(getattr(student, feature), rng) for student in students
+            ]
+
+    transformed = tuple(
+        replace(
+            student,
+            **{
+                feature: replacements[feature][index]
+                for feature in features
+            },
+        )
+        for index, student in enumerate(students)
+    )
+    return SyntheticDataset(
+        transformed,
+        dataset.seed,
+        dataset.overlap_profile,
+        profile,
+    )
 
 
 def _generate_student(
@@ -242,6 +302,27 @@ def _weighted_choice(rng: Random, values: Iterable, weights: Iterable[int]):
     values_tuple = tuple(values)
     weights_tuple = tuple(weights)
     return rng.choices(values_tuple, weights=weights_tuple, k=1)[0]
+
+
+def _permute_bundles(
+    values: list[frozenset[str]], rng: Random, fraction: float
+) -> list[frozenset[str]]:
+    result = list(values)
+    count = int(len(values) * fraction)
+    if count < 2:
+        return result
+    indices = sorted(rng.sample(range(len(values)), count))
+    shuffled = [values[index] for index in indices]
+    rng.shuffle(shuffled)
+    for index, value in zip(indices, shuffled):
+        result[index] = value
+    return result
+
+
+def _sparsify(values: frozenset[str], rng: Random) -> frozenset[str]:
+    if rng.random() < 0.60:
+        return frozenset()
+    return frozenset(value for value in values if rng.random() < 0.35)
 
 
 def _format_minute(minute: int) -> str:

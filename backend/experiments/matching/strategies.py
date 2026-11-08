@@ -236,6 +236,44 @@ class SimilarityGreedyStrategy:
         return sorted(selected)
 
 
+class FeasibleGreedyStrategy(SimilarityGreedyStrategy):
+    """Controlled baseline using the feasible pipeline without attributes.
+
+    Inheriting the matching loop is intentional: candidate windows, coverage
+    ordering, group partitioning, anchors, intervals, and validation are
+    identical to ``SimilarityGreedyStrategy``. Only companion ranking differs.
+    """
+
+    name = "feasible_greedy"
+
+    def _select_group(
+        self,
+        pool: set[str],
+        size: int,
+        students: dict[str, SyntheticStudent],
+        flexibility: dict[str, int],
+    ) -> list[str]:
+        if len(pool) < size:
+            return []
+        anchor = min(
+            pool,
+            key=lambda student_id: (
+                flexibility.get(student_id, 0),
+                students[student_id].hangout_count,
+                student_id,
+            ),
+        )
+        companions = sorted(
+            pool - {anchor},
+            key=lambda student_id: (
+                students[student_id].hangout_count,
+                flexibility.get(student_id, 0),
+                student_id,
+            ),
+        )[: size - 1]
+        return sorted((anchor, *companions))
+
+
 class SimilarityLocalSearchStrategy:
     """Greedy seed followed by bounded, deterministic swaps and moves."""
 

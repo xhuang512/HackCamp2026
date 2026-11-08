@@ -36,6 +36,7 @@ class EvaluationRow:
     match_rate: float
     mean_group_similarity: float
     newcomer_coverage: float
+    feasible_group_count: int
     groups_of_3: int
     groups_of_4: int
     groups_of_5: int
@@ -100,6 +101,7 @@ def evaluate_dataset(
                 newcomer_coverage=_safe_ratio(
                     len(matched_newcomers), len(feasible_newcomers)
                 ),
+                feasible_group_count=len(valid_groups),
                 groups_of_3=sizes.count(3),
                 groups_of_4=sizes.count(4),
                 groups_of_5=sizes.count(5),
@@ -137,6 +139,9 @@ def summarize(rows: Sequence[EvaluationRow]) -> list[dict[str, object]]:
                 "similarity_mean": _mean(samples, "mean_group_similarity"),
                 "similarity_stdev": _stdev(samples, "mean_group_similarity"),
                 "newcomer_coverage_mean": _mean(samples, "newcomer_coverage"),
+                "feasible_group_count_mean": _mean(
+                    samples, "feasible_group_count"
+                ),
                 "runtime_seconds_mean": _mean(samples, "runtime_seconds"),
                 "violations_total": sum(
                     sample.hard_constraint_violations for sample in samples
