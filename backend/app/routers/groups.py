@@ -29,6 +29,7 @@ from app.groups_view import (
     live_members,
     state_for,
 )
+from app.lifecycle_refresh import refresh_lifecycle
 from app.models import (
     CheckInCodeOut,
     CheckInRequest,
@@ -165,6 +166,7 @@ def _respond(
 def list_open_groups(
     student: Annotated[store.Student, Depends(onboarded_user)],
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> list[OpenGroupOut]:
     groups = GroupRepository(client)
     members = GroupMemberRepository(client)
@@ -355,6 +357,7 @@ def get_group(
     id: Annotated[str, Path(description="Opaque group identifier")],
     student_id: Annotated[str, Depends(get_current_student_id)],
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> GroupOut:
     members, group = _member_and_group(client, id, student_id)
     return group_out(client, group, student_id, members=members)

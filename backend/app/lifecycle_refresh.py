@@ -70,7 +70,7 @@ def refresh_lifecycle_rows(client: Client, *, at: datetime) -> None:
     """Apply and persist lifecycle transitions for relevant groups."""
     groups = GroupRepository(client)
     members = GroupMemberRepository(client)
-    rows = groups.list_from(at.astimezone(APPLICATION_TIMEZONE).date())
+    rows = groups.list_lifecycle_candidates()
     memberships = members.list_for_groups([str(row["id"]) for row in rows])
 
     by_group: dict[str, list[dict]] = {}

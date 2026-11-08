@@ -47,6 +47,9 @@ class LifecycleRefreshTests(unittest.TestCase):
 
     def test_confirmed_group_catches_up_to_completed_after_end(self) -> None:
         self._make_confirmed_group()
+        self.group["on_date"] = "2026-11-07"
+        self.group["invite_expires_at"] = "2026-11-07T19:50:00+00:00"
+        self.group["confirmed_at"] = "2026-11-07T19:45:00+00:00"
         after_end = datetime(2026, 11, 8, 23, 1, tzinfo=timezone.utc)
 
         refresh_lifecycle_rows(self.database, at=after_end)

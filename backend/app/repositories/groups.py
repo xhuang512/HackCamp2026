@@ -58,6 +58,17 @@ class GroupRepository:
             "read live groups",
         )
 
+    def list_lifecycle_candidates(self) -> list[dict[str, Any]]:
+        """Read every non-terminal group so overdue rows can catch up."""
+        return execute(
+            self.client.table("groups")
+            .select(COLUMNS)
+            .in_("status", list(LIVE_GROUP_STATES))
+            .order("on_date")
+            .order("start_time"),
+            "read lifecycle candidates",
+        )
+
     def get(self, group_id: str) -> dict[str, Any]:
         rows = execute(
             self.client.table("groups").select(COLUMNS).eq("id", group_id).limit(1),
