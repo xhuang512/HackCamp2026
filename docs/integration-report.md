@@ -1,449 +1,275 @@
-# Backend and frontend integration report
+# Integration report, 2026-11-08 (schedule pass)
 
-- Run date: 2026-11-07 (America/Vancouver)
-- Branch: `feat/integrate`, level with `origin/main` at `04c0f46`, 17 commits ahead
-- Marker tag `last-integration`: did not exist, so everything below is treated
-  as new
-- Method: endpoints read from the FastAPI app's own `/openapi.json`, generated
-  in process so no port was taken; frontend calls read from
-  `frontend/src/lib/api.js` and matched against it by path and method
+Second pass. The first one covered the group lifecycle backend and is summarised
+at the bottom under "Previous pass". This pass covers everything the backend
+gained since the `last-integration` tag, which is one commit, `90b7438`,
+"Add schedule AI integration and related tests".
 
-## Headline
+Discovered from the code and from the running server's `/openapi.json`, not from
+the commit message.
 
-There are **no broken calls**. All sixteen paths `api.js` calls exist on the
-backend with the shapes it expects, so phase 2 has nothing to do.
+## Phase 1, discover
 
-The gap is not missing endpoints, it is **unused data inside endpoints the
-frontend already calls**. Four fields the backend returns or accepts are never
-read or sent, and two of them carry the demo's strongest lines. Separately,
-two screens never refresh, which is enough on its own to fail step 5 of the
-AGENTS.md demo check.
+### What landed
 
-## 1. Broken calls
+`git diff last-integration -- backend/` is ten files, 1379 lines added, 2
+changed. Six are new modules and tests; the two changed lines were import
+conflicts, resolved in `7d77417`.
 
-None.
-
-| Checked | Result |
+| File | What it is |
 | --- | --- |
-| 16 frontend paths against 18 backend operations | every one resolves |
-| Response shapes against `src/lib/fixtures.js` | no drift |
-| Required response fields against component reads | no component reads a field the backend omits |
+| `app/schedule.py` | Pure domain. `BusyInterval`, `merge_busy_intervals`, `suggest_free_blocks`, and the strict Pydantic shapes the AI is asked to return. No I/O, no FastAPI. |
+| `app/schedule_ai.py` | The provider-agnostic seam: a `ScheduleParser` protocol, the extraction prompt, the error types, and `validate_schedule_image`. |
+| `app/gemini_schedule.py` | The one Gemini implementation of that protocol. |
+| `app/routers/schedule.py` | Two endpoints, below. |
+| `app/repositories/free_blocks.py` | Gained `replace_for_student`, a delete-then-insert with a compensating rollback. |
+| `tests/test_schedule.py` | 18 tests, 3 subtests. All pass. |
 
-Two backend operations have no frontend caller, both deliberately:
+The seam between `schedule_ai.py` and `gemini_schedule.py` is worth noticing: no
+route imports Gemini. Swapping providers is one factory function. This is the
+walking-skeleton rule applied properly, and nothing below asks for it to change.
 
-- `POST /me/paused` is a compatibility alias. `api.setPaused()` goes through
-  `PATCH /me` instead, which is the documented route. Leave it.
-- `GET /auth/config` has no wrapper at all. See item 2.1.
+### Two new endpoints
 
-One fixture does disagree with the backend's behaviour, which is a defect in
-the fixture rather than a broken call. See item 5.2.
-
-## 2. New or unused endpoints
-
-| Endpoint | What it does | Belongs in | Tier |
+| Endpoint | Request | Response | Does |
 | --- | --- | --- | --- |
-| `GET /auth/config` | Reports the backend's real `DEMO_MODE`, whether the guest signing secret is set, and whether Auth0 is configured and reachable. No secrets, only set/unset. | `src/lib/authContext.js`, and the Welcome screen through it | Not in AGENTS.md (setup aid) |
-| `POST /admin/reset` | Reseeds buildings, students and groups. Returns the three counts. `api.adminReset()` exists already. | Projector screen, demo mode only | **Tier 1**, item 6, and step 6 of the demo check |
-| `GET /groups/{id}` | Full `GroupOut` for one group, members only. `api.getGroup()` exists already. | Nothing. The group card gets the same object from `GET /me/now`. | Tier 1 contract, already satisfied elsewhere |
-| `GET /health` | `{status: "ok"}`. `api.getHealth()` exists already. | Nothing. Right Now already detects an unreachable backend from `error.status === 0`. | Not in AGENTS.md |
+| `POST /schedule/parse` | `multipart/form-data`, field `image`. PNG, JPEG or WebP, max 10 MB, max 12000px per side, max 50M pixels. | `{timed_events, all_day_events, warnings, suggested_free_blocks, matching_window, availability_status}` | Sends the screenshot to Gemini, validates the structured reply against `ExtractedSchedule`, subtracts the visible events from the matching window, and returns suggestions. **Persists nothing** and triggers no matching. |
+| `PUT /me/schedule` | `{free_blocks: [{day, start_time, end_time}]}`, at most 35, non-overlapping, `day` 0 to 6 with Monday 0 | `{status: "saved", free_blocks}` | Replaces the caller's Supabase `free_blocks` wholesale, then runs matching for each affected upcoming date, best-effort. |
 
-### 2.1 Why `GET /auth/config` is worth wiring
+`availability_status` is a constant, `"suggested_not_confirmed"`. It is the
+backend saying in the payload that a parse result is not availability. Nothing
+is saved until the student confirms.
 
-The frontend currently guesses demo mode from its own env var:
+Status codes I confirmed rather than inferred:
 
-```js
-// src/lib/authContext.js:29
-import.meta.env.VITE_DEMO_MODE === 'true' || !auth0Configured
-```
-
-That is the frontend's opinion, not the backend's. When `VITE_DEMO_MODE=true`
-and the backend's `DEMO_MODE` is off, the Welcome screen offers "Continue as
-guest", the student taps it, and `POST /students` refuses to issue a guest
-token. The button is a dead end and nothing explains why. `GET /auth/config`
-is the authoritative answer and is public, so it can be read before sign-in.
-
-## 3. Unused fields in endpoints the frontend already calls
-
-This is where the real work is.
-
-### 3.1 `mode` is returned everywhere and displayed nowhere — Tier 1
-
-`GroupOut.mode` and `OpenGroupOut.mode` are both `social | study` and
-required. Nothing renders either.
-
-Worse than unused, Right Now derives the group card's heading from its own
-local toggle:
-
-```js
-// src/pages/RightNow.jsx:56
-const label = mode === 'social' ? 'Your group for this gap' : 'Your quiet study group'
-```
-
-`mode` here is `useState('social')`, not `data.group.mode`. A student whose
-suggested group is a study group reads "Your group for this gap" until they
-happen to flip the toggle. The file's own header comment says "Mode is local
-for now", which was true when it was written and is not any more.
-
-In the open groups list, a study group and a social group are visually
-identical, so the one fact that decides whether a student wants to join is
-the one fact missing.
-
-### 3.2 `courses` is accepted and never sent — Tier 1
-
-`CreateStudentRequest.courses` is a list of up to ten course codes.
-`api.createStudent()` does not include the field in its body at all.
-
-What it feeds, verified in the code rather than assumed:
-
-- `StudentRepository.shared_signals()` reads `student_courses` and puts course
-  codes **first** in the `shared` list, ahead of tags and languages. This is
-  the "STAT 302" in AGENTS.md's own example response and the strongest line on
-  a group card.
-- It does **not** feed matching. `engine.form_groups()` says in its docstring
-  that it "intentionally ignores matching signals" and groups purely on time
-  overlap. So sending courses changes what a card *says*, not who is in it.
-
-Codes are free text, normalised by `normalize_course_code()` to
-`^([A-Z]{2,5})([0-9]{3}[A-Z]?)$` and rendered as `STAT 406`. Unknown codes are
-created on demand, so no catalog is needed and `GET /options` deliberately
-does not offer one.
-
-One deployment catch: `POST /students` fails the whole request if `courses`
-is non-empty while the backend's `CURRENT_TERM` environment variable is unset
-(`app/routers/identity.py:372`). Sending courses makes a previously working
-signup fail on any backend missing that variable. `.env.example` lists
-`CURRENT_TERM` but leaves it blank.
-
-> **Correction.** Phase 1 of this report said that failure was a **422**. It
-> is a **503**, deliberately, because an unset environment variable is the
-> server's fault and not the caller's. A real request in phase 4 is what
-> caught it; the recovery path in `Onboarding.jsx` had been written against
-> 422 and would never have fired. It now keys off the message instead.
-
-### 3.3 `PATCH /me` accepts seven fields and the Me screen sends two
-
-| Field | Sent by Me screen? |
+| Code | When |
 | --- | --- |
-| `paused` | yes |
-| `visibility` | yes |
-| `first_name` | no |
-| `tags` | no |
-| `languages` | no |
-| `ask_me_about` | no |
-| `favourite_spots` | no |
+| 401 | No token. Verified against the running server; the parser is never called. |
+| 403 | Token fine, no profile. Both routes go through `onboarded_user`. See the onboarding gap below. |
+| 413 | Image over 10 MB |
+| 422 | Not an image, a content type that disagrees with the bytes, dimensions out of range, or overlapping blocks on the `PUT` |
+| 429 | Gemini rate limited |
+| 502 | Gemini failed or returned something that would not validate; or the free-block replacement failed and was rolled back |
+| **503** | `GOOGLE_CLOUD_GEMINI_API_KEY` unset. Detail: `"Schedule parsing is not configured"`. |
 
-`StudentOut` also returns `favourite_spots`, which no component reads.
+That 503 is the state the repo is in right now: there is no key in any `.env`,
+so every `POST /schedule/parse` returns it. I confirmed the exact code and
+detail string by calling the dependency directly, because last pass I reported a
+status code from reading the source and got it wrong.
 
-Two asymmetries worth knowing before building anything here:
+### Frontend inventory
 
-- `PATCH /me` accepts `languages` and `ask_me_about`, but `StudentOut` does
-  not return either. They can be written and never read back.
-- `favourite_spots` **cannot persist**. See item 4.2. Building the editor
-  would produce a control that appears to work and silently forgets.
+`src/lib/api.js` exports 18 backend functions. Every endpoint the server serves
+has one except the two new ones.
 
-Editing name and tags is a plain win and depends on nothing. Favourite spots
-is Tier 2 in AGENTS.md and is blocked on the backend.
+| Screen | Calls |
+| --- | --- |
+| `Welcome.jsx` | `getAuthConfig` |
+| `Onboarding.jsx` | `getOptions`, `createStudent` |
+| `RightNow.jsx` | `getMeNow`, `getOpenGroups`, `getOptions`, `createGroup`, `joinGroup`, `skipGroup` |
+| `MapPage.jsx` | `getMap` |
+| `Projector.jsx` | `getProjector`, `getAuthConfig`, `adminReset` |
+| `Me.jsx` | `getMe`, `getOptions`, `patchMe`, `setPaused` |
+| `CheckInCode.jsx` | `getCheckinCode` |
+| `CheckInScanner.jsx` | `postCheckin` |
 
-### 3.4 Two screens never refresh — Tier 1, and it fails the demo check
+`getGroup` and `getHealth` exist in `api.js` with no caller. Neither is broken.
 
-Neither the Projector nor the Map polls or subscribes. `useAsync` fetches once
-per mount and only refetches when something calls `reload()`. Nothing does on
-either screen.
+### Broken calls
 
-Step 5 of the AGENTS.md demo check is "Two phones in the same group check each
-other in, and the projector's checked-in count goes up". It will not go up.
-The number is correct at the moment the page loads and then frozen, so the
-stage demo needs someone to reload the laptop by hand at the right second.
+**None.** No endpoint was removed and no response shape changed. The only
+contract-level edit in `90b7438` was additive.
 
-`src/lib/live.js` is the intended long-term answer and is an honest stub:
-`@supabase/supabase-js` is not installed, so `useLive` holds its initial value
-and reports `offline`. Per the walking-skeleton rule, polling is the dumb body
-that makes the demo work now without changing that signature later.
+Two things that are not broken but would have broken on the first attempt:
 
-## 4. Unfinished backend
+1. `request()` in `api.js` sets `Content-Type: application/json` and
+   `JSON.stringify`s every body. A multipart upload cannot go through it.
+   `POST /schedule/parse` needs its own path that passes a `FormData` straight
+   to `fetch` and lets the browser set the boundary.
+2. `PUT` is not among the methods `request()` is used with today. It takes
+   `method` as a parameter, so this is nothing, but worth saying it was checked.
 
-### 4.1 The group lifecycle is implemented but never runs
+### New or unused endpoints
 
-`app/lifecycle.py` has `expire_invitations()`, `advance_group_for_time()` and
-`transition_group()`, all pure, all tested. **Nothing calls any of them.** No
-route, no scheduler, no CLI entry point:
-
-```
-$ grep -rn 'expire_invitations\|advance_group_for_time' app/ match.py
-  (only app/lifecycle.py itself)
-```
-
-`GroupRepository.set_status()` has zero callers too, including in tests.
-Confirmation happens through the atomic RPC instead, which is why it is unused.
-
-At runtime, therefore: invitations never expire, and a group never leaves
-`forming` or `confirmed` for `active`, `completed` or `dissolved`. The states
-exist in the schema and in `GroupOut.state`, and two of the five are currently
-unreachable. Anything the frontend builds on "the gap has started" has nothing
-to read yet.
-
-### 4.2 Favourite spots cannot be stored
-
-`StudentRepository.list_spot_ids()` and `set_spots()` both read and write a
-`student_spots` table. That table is **not in `sql/schema.sql`**. Both methods
-catch Postgres error `PGRST205` (table not found) and return quietly, so
-nothing 502s and nothing persists.
-
-This is a consequence of this branch's own merge. `student_spots` was created
-by `sql/002_plan_alignment.sql`, which was deleted during the lifecycle merge
-because the rest of it rewrote columns the canonical schema no longer has. The
-table went with it. The canonical schema never had it.
-
-The visible effect is mild and misleading: `GET /me` echoes
-`favourite_spots` back from the in-process `app/store.py`, so the value
-survives until the backend restarts, is never read by the matcher, and is
-invisible to any other process.
-
-Knock-on effect on the meeting spot: `engine.pick_spot()` is documented as
-"favourite spots, then shortest total walk". With `student_spots` absent, the
-favourites half always receives empty lists, so building choice falls entirely
-to the `spread` tie-break, which varies by group index to keep the map from
-collapsing onto one pin.
-
-### 4.3 Matching ignores every signal
-
-`engine.form_groups()` groups on time overlap alone, by its own docstring.
-AGENTS.md Tier 1 item 2 asks for "newcomer priority (low hangout counts
-matched first)", and the Backend conventions section names
-`shared_with(a, b)`. Neither exists; `grep -rn 'def shared_with' app/` finds
-nothing. Groups are correct in size and timing and arbitrary in composition.
-
-### 4.4 `walk_min` is a constant
-
-`PLACEHOLDER_WALK_MIN = 5` in `app/groups_view.py`, returned for every spot.
-Clearly labelled, honest, and it means "5 min walk for you" on the group card
-is decoration. No distance data exists to replace it.
-
-## 5. Concerns
-
-### 5.1 `GET /groups/open` reveals the exact building to non-members
-
-`OpenGroupOut.area` is `groups.building_name(...)`, the real building name, and
-the endpoint is callable by any onboarded student.
-
-The two AGENTS.md rules pull in opposite directions:
-
-- "Before joining it shows only the time, the general area and what they
-  share." A building name is more precise than a general area.
-- "Meeting spots are public campus buildings, revealed only once the group is
-  confirmed." These groups *are* confirmed, which permits it.
-
-So it is defensible and it is also inconsistent with the group card, which
-since this branch's lifecycle merge withholds `spot` until the caller has
-joined. The same student learns the building from the open list and not from
-the card. **Your call**, and it is a one-line change either way: keep it as
-the thing that makes an open group joinable, or coarsen it to an area label.
-I have changed nothing.
-
-### 5.2 Fixture mode teaches a privacy rule the backend enforces
-
-`fixtures.js` `meNow` returns `my_state: 'invited'` together with
-`spot: { building: 'The Nest' }`. The real backend will not return that
-combination any more: `spot_is_visible_to()` requires the caller to have
-joined. Anyone developing screens with `VITE_USE_FIXTURES=true` sees the spot
-before joining and would reasonably build as if that were allowed.
-
-### 5.3 No privacy or group rule is broken by the code as it stands
-
-Checked against the rules in AGENTS.md, in the serialisers rather than from
-the route names: open groups, `/map` and `/projector` carry no names; map
-counts below `MIN_GROUP_SIZE` are dropped rather than rounded; group first
-names reach only joined callers and name only joined members; `/map` takes no
-coordinate parameter; non-members get 404 from group detail. `MIN_GROUP_SIZE`
-is one constant, set to 3.
-
-## 6. Proposed order
-
-Broken calls first, then new work in tier order. Nothing in step 1, so:
-
-| # | Item | Tier | Touches | Blocked? |
-| --- | --- | --- | --- | --- |
-| 1 | Show `mode` on the group card and in the open list, and take the card's label from `group.mode` instead of the local toggle | 1 | `GroupCard.jsx`, `OpenGroupList.jsx`, `RightNow.jsx` | no |
-| 2 | Poll `GET /projector` and `GET /map` so the demo's counts move | 1 | `useAsync.js` or a small `usePoll`, `Projector.jsx`, `MapPage.jsx` | no |
-| 3 | Reset button on the Projector screen, demo mode only, wired to `GET /auth/config` | 1 | `api.js`, `authContext.js`, `Projector.jsx` | no |
-| 4 | Send `courses` from onboarding, so `shared` carries course codes | 1 | `api.js`, `Onboarding.jsx` | needs `CURRENT_TERM` set on the backend |
-| 5 | Edit name and tags from the Me screen | 2 | `Me.jsx` | no |
-| 6 | Favourite spots editor | 2 | `Me.jsx` | **yes**, see 4.2 |
-
-Items 1 to 3 are frontend-only and need no backend change. Item 4 needs an
-environment variable, not a code change. Item 6 should not be built until
-`student_spots` exists.
-
-## For the backend owner
-
-Ordered by what it costs the demo. I have changed none of this.
-
-1. **Nothing calls the lifecycle functions** (4.1). `expire_invitations()` and
-   `advance_group_for_time()` are written and tested but unreachable, so
-   invitations never expire and no group ever becomes `active` or `completed`.
-   A route or a periodic task would make three of the five group states real.
-   `GroupRepository.set_status()` is dead code and can go.
-2. **`student_spots` is missing from `sql/schema.sql`** (4.2). Favourite spots
-   are accepted by two endpoints and silently discarded, and
-   `engine.pick_spot()`'s favourites half never receives data. The table
-   definition is recoverable from `sql/002_plan_alignment.sql` in this
-   branch's history, at commit `97e4679^`.
-3. **`CURRENT_TERM` has no default** (3.2). With it unset, any `POST /students`
-   carrying courses is a 422. Either default it or let courses through without
-   a term.
-4. **Matching ignores all signals** (4.3). Tier 1 asks for newcomer priority
-   and `shared_with(a, b)`; groups are currently time-overlap only.
-5. **`StudentOut` omits `languages` and `ask_me_about`** (3.3) although
-   `PATCH /me` accepts both. Write-only fields cannot be shown in an editor.
-6. **`PLACEHOLDER_WALK_MIN`** (4.4) makes every walk five minutes. Fine as a
-   placeholder; the group card is currently stating it as fact.
-7. **Decide on `OpenGroupOut.area`** (5.1), which is the exact building name
-   rather than a general area.
-
-## Phase 2, broken calls
-
-Nothing to do. Section 1 found none, and nothing changed that conclusion.
-
-## Phase 3, what was built
-
-Five of the six proposed items, each on its own commit. Item 6 was skipped
-on purpose; see below.
-
-| # | Item | Commit |
+| Endpoint | Belongs in | Tier |
 | --- | --- | --- |
-| 1 | `mode` on the group card and open list, card label from `group.mode` | `6a337c2` |
-| 2 | Projector and map refresh on a timer | `6338073` |
-| 3 | `GET /auth/config`, and the demo reset button it gates | `e9c509d` |
-| 4 | `courses` collected in onboarding and sent | `233082f` |
-| 5 | Name and tags editable from the Me screen | `2efe08a` |
+| `POST /schedule/parse` | A schedule section on `Me.jsx`: upload, then a review list | **Tier 2**, "Gemini schedule parsing with a review screen". Also named under `Later:` in the AGENTS.md contract table. |
+| `PUT /me/schedule` | The Save button on that review list | **Not in AGENTS.md.** It is the persistence half of the same Tier 2 item, so it inherits the tier, but the contract table does not mention it and should. |
 
-Three things worth knowing about how they were built:
+### Unfinished backend
 
-- **The card label was wrong, not just missing.** Right Now derived its
-  heading from its own mode toggle rather than `group.mode`, so a suggested
-  study group was labelled a social one. The toggle only ever chose the mode
-  for a group the student starts, which is what it still does.
-- **Polling does not go through `reload()`.** Bumping the key would make
-  `loading` true on every tick and flash the loading state at a room. A poll
-  writes under the key already current. A failed poll keeps the last good
-  numbers and says `stale` rather than blanking the stage.
-- **Courses went on the existing step 3**, not a new step. That step already
-  asks "anything we should match you on?", and AGENTS.md pins a guest at
-  three screens to get a stage audience from the join QR to a group card
-  inside 30 seconds.
+- **Parsing is unconfigured, so the feature is a 503 today.** Not a defect. It
+  needs `GOOGLE_CLOUD_GEMINI_API_KEY` in the root `.env`. Anything the frontend
+  ships has to treat 503 as a first-class state, not an error banner, because
+  503 is what the demo will show unless someone adds a key.
+- **`GEMINI_MODEL` defaults to `gemini-3.8-flash`.** I cannot verify that model
+  name resolves without a key. If it does not, every call is a 502.
+- **`genai.Client(enterprise=True, ...)`** is an unusual argument. Unverifiable
+  here for the same reason. Both of these are first-call-with-a-real-key risks,
+  not code to change.
+- **`/auth/config` says nothing about schedule parsing.** It already reports
+  `demo_mode` and whether Auth0 and the guest secret are set, and `Welcome.jsx`
+  uses it for exactly this kind of pre-flight. There is no equivalent question
+  for parsing, so the frontend cannot know before the student picks a file. See
+  "For the backend owner".
+- `tests/test_gemini_schedule_integration.py` is skipped unless
+  `RUN_GEMINI_INTEGRATION=1`. Correct, and it is one of the 7 skips.
 
-### Item 6 was skipped
+### Concerns
 
-Favourite spots. `PATCH /me` accepts the field and it cannot persist, because
-`student_spots` is not in `sql/schema.sql` and both repository methods
-swallow the missing-table error. An editor would appear to work and forget on
-restart. See 4.2 and the backend list below.
+**1. The confirmed schedule lands in one store and the gap label reads the
+other.** This is the one that blocks the feature, so it is first.
 
-### One backend change, and why
+Identity is still split (`docs/HANDOFF.md` section 3): `app/store.py` holds the
+authenticated profile, Supabase holds the matchable row. `POST /students` writes
+both. `PUT /me/schedule` writes **only** the Supabase `free_blocks` table.
 
-`app/groups_view.py` and `app/routers/map.py` were changed during the
-preceding lifecycle merge, not during this integration: the meeting spot was
-visible to a caller who had only been invited, and `GET /map` leaked the same
-thing with coordinates attached. Those are privacy-rule fixes, which
-AGENTS.md says to make in the backend. No backend code was changed for this
-integration pass.
+`GET /me/now` reads both, from different places:
 
-## Phase 4, verification
+- the suggested group comes from `FreeBlockRepository.list_for_student`, which
+  is Supabase, so it **does** see the confirmed schedule
+- `_next_gap(student)` in `routers/students.py:115` reads
+  `store.Student.free_blocks`, which **does not**
 
-Both servers were run and every endpoint touched was called for real.
+So a student who uploads a screenshot and confirms it gets groups matched
+against their real availability, under a header still showing the gap from the
+preset they picked during onboarding. The header is the first line on the app's
+main screen. Shipping a review screen on top of this means shipping a screen
+whose effect is invisible and, where it is visible, wrong.
 
-### Against the running backend
+Also downstream of the same gap: `_aha_for` in `routers/identity.py:300` and
+`store.overlap_count`, both store-only.
 
-The backend ran on port 8000 with `DEMO_MODE` and `CURRENT_TERM` set. There
-are no Supabase credentials in this checkout, so the database-backed routes
-were exercised in process against the test suite's fake instead, which is the
-same fake the 100 backend tests use.
+This is the "bug that blocks the frontend" case, so a minimal backend fix is in
+scope: have `PUT /me/schedule` write the store half too, the way
+`POST /students` already does. Nothing else about the endpoint changes.
 
-| Call | Result |
-| --- | --- |
-| `GET /health` | 200 `{"status":"ok"}` |
-| `GET /auth/config` | 200, `demo_mode` tracking the environment variable both ways |
-| `POST /students` with `courses: ["stat 406","cpsc121"]` | 201. Catalog gained `STAT 406` and `CPSC 121`, both linked to the new student. Normalisation confirmed end to end. |
-| `POST /students` with courses, `CURRENT_TERM` unset | **503**, not the 422 this report first claimed |
-| `POST /students` with `courses: []` | 201, which is the "Finish without courses" path |
-| `GET /me`, `GET /me/now`, `GET /groups/open`, `GET /map`, `GET /options` | 200, shapes as documented |
-| `PATCH /me` with `first_name` and `tags` | 200, both changed |
-| `POST /admin/reset` | 200, 8 buildings, 60 students, 29 groups |
+**2. The screenshot goes to a third party.** AGENTS.md: "Timetables, classrooms
+and points balances stay private to their owner." A timetable screenshot sent to
+Google is a disclosure that rule does not contemplate, and a screenshot carries
+more than a timetable: section numbers, room numbers, sometimes a student number
+in a header.
 
-### In a real browser
+The backend handles its side carefully. `parse_schedule` resolves auth before
+reading a byte, then `del student_id`, with a comment saying the opaque id is
+not sent to the provider or logged. Nothing is persisted. The prompt tells the
+model not to infer availability.
 
-| Checked | Result |
-| --- | --- |
-| Mode badge on the group card | Renders, reads clearly in dark mode |
-| Empty-spot sentence for a confirmed group the reader has not joined | "This group is confirmed. Join it to see where everyone is meeting." |
-| Polling fires | 3 requests to `/api/projector` in 16s, at 866ms, 5900ms, 10827ms. Exactly 5s apart. |
-| Polling does not flash loading | 53 samples over 13s, 2+ poll cycles. The loading text never reappeared and the number stayed on screen throughout. |
-| Reset button with `DEMO_MODE=true` | Present |
-| Reset button with `DEMO_MODE=false` | Absent |
-| Guest button with backend `DEMO_MODE=false` | Disabled, with "Guest sign-in is off on the server. Set DEMO_MODE=true in the backend's .env and restart it." |
-| Course input, invalid code | `"not a course" is not a course code. They look like STAT 302.` Text kept, not cleared. |
-| Course input, `stat-302` | Normalised to a `STAT 302` chip; Finish enabled with no tags ticked |
-| Draft persistence | `courses: ["STAT 302"]` saved at draft version 1, no bump needed |
-| Me editor | Opens seeded, saves, identity line updates to "Guest · Transfer student · Commuter" |
-| Map screen | Tiles, "Your group is at The Nest", "2 of 4 checked in", accessible sheet |
+What is missing is on my side: the student is never told. A file picker that
+silently uploads their timetable to Google is not consent. The upload entry
+point needs to say where the image goes, before the picker opens, and it needs
+to be skippable, which it is, because presets still exist.
 
-The reset button was deliberately **not clicked** in the browser: it opens a
-`window.confirm`, which blocks the automation. The endpoint itself was called
-directly and returned 200.
+I am treating this as a copy and consent requirement on the frontend, not a
+reason to stop. Flagging it rather than deciding it: **if the team would rather
+not send timetables off-box at all, say so and this feature does not ship.**
 
-### Automated
+**3. All-day events are extracted and then ignored.**
+`busy_intervals_from_extraction` iterates `extraction.timed_events` only.
+`all_day_events` is parsed, returned, and never subtracted. An all-day
+"Conference" or "Reading break" produces a suggestion that the student is free
+09:00 to 18:00 that day.
 
-| Suite | Result |
-| --- | --- |
-| Backend | 100 passed, 6 skipped (the optional live Supabase tests) |
-| Frontend lint | clean |
-| Frontend build | clean, Leaflet still split at 157.65 kB |
-| `npm run check:signup` | 17 of 17 route-gate checks |
-| SSR of `/`, `/map`, `/me`, `/projector` | all render, no Leaflet in output |
+Not a privacy breach, and the review screen is the mitigation: the student sees
+every suggested block before anything saves, and can delete one. But the
+suggestion is wrong by default on exactly the days it matters, and the fix is
+one loop. In "For the backend owner" rather than changed here, because changing
+which events count as busy is a behaviour decision, not a blocking bug. The
+review screen must show `all_day_events` so the student can see the thing the
+suggestion ignored.
 
-### Not verified
+**4. Neither schedule endpoint can be reached during onboarding.** Both depend
+on `get_current_student_id`, which goes through `onboarded_user`, which 403s
+without a profile. There is no profile until `POST /students` at the end of
+onboarding.
 
-Everything above runs against the fake database or fixtures. **None of it is
-evidence that check-in or the map works against the shared Supabase project**,
-which still needs the disposable-database pass in `docs/HANDOFF.md` section 10.
-Two phones checking each other in has not been done.
+So the screenshot flow cannot be an onboarding step. Onboarding step 2 currently
+says "Uploading a screenshot of your timetable comes later", which happens to be
+accurate, but it reads like a promise about a later release rather than a
+description of where the feature lives.
 
-## For the backend owner
+I am not changing the auth on those routes: a profile-less caller is a
+deliberate 403 and loosening it to `current_user` would need `POST /students` to
+accept a parse result, which is a contract change. The feature goes on `Me.jsx`,
+where it works. Noted for the backend owner.
 
-Unchanged from phase 1 except where noted. None of this was altered.
+**5. No way to read the confirmed schedule back.** `GET /me` returns
+`StudentOut`, which is `{id, first_name, is_guest, paused, visibility, tags,
+favourite_spots}`. No `free_blocks`. `PUT /me/schedule` replaces wholesale.
 
-1. **Nothing calls the lifecycle functions** (4.1). `expire_invitations()` and
-   `advance_group_for_time()` are written and tested but unreachable, so
-   invitations never expire and no group ever becomes `active` or
-   `completed`. `GroupRepository.set_status()` is dead code.
-2. **`student_spots` is missing from `sql/schema.sql`** (4.2). This blocks
-   item 6. The definition is recoverable at commit `97e4679^`.
-3. **`CURRENT_TERM` has no default** (3.2). With it unset, any
-   `POST /students` carrying courses is a **503**. The frontend now offers to
-   retry without them, but that is a workaround for a variable only you can
-   set.
-4. **Matching ignores all signals** (4.3). Tier 1 asks for newcomer priority
-   and `shared_with(a, b)`; groups are time-overlap only. Note this also
-   means the courses the frontend now sends change what a card *says*, not
-   who is on it.
-5. **`StudentOut` omits `languages` and `ask_me_about`** (3.3) although
-   `PATCH /me` accepts both, so they cannot be shown in an editor. This is
-   why the Me screen edits name and tags only.
-6. **`PLACEHOLDER_WALK_MIN`** (4.4) makes every walk five minutes.
-7. **Decide on `OpenGroupOut.area`** (5.1). I left it alone rather than
-   coarsening it: there is no area or zone column on `buildings`, only
-   `slug`, `name`, `lat`, `lng` and `is_indoor`, so producing a "general
-   area" would mean inventing a campus-zone mapping that nothing in the
-   repository can verify. That is a decision about product wording and data,
-   not a refactor.
-8. **`GET /auth/config` reports `guest_token_secret_set: false` when the
-   secret is set under the compatibility name** `GUEST_SESSION_SECRET`. It
-   only checks `GUEST_TOKEN_SECRET`. Harmless, but the diagnostic says
-   "unset" about a server that is signing tokens fine, which is exactly the
-   wrong direction for a setup aid.
+So the frontend can write a schedule and never show it. The parse-review-save
+flow does not need a read, because the suggestions come from the parse response,
+which is why this is not a blocker. But a student cannot see or edit what they
+saved, and "replace wholesale" plus "cannot read" means the only way to adjust
+one block is to re-upload the screenshot. For the backend owner.
 
-## Status
+### Proposed order
 
-Phases 1 to 4 complete. Nothing is pushed; everything is local on
-`feat/integrate`. The `last-integration` tag now marks this pass, so the next
-run can diff the backend from here.
+Broken calls: none, so nothing in Phase 2.
+
+1. **The store/Supabase split on `PUT /me/schedule`** (concern 1). Minimal
+   backend fix. Everything else is pointless without it.
+2. **`api.js`: `parseSchedule` and `putSchedule`.** One function per endpoint,
+   plus the multipart path `request()` cannot take.
+3. **The review screen on `Me.jsx`.** Upload, consent copy before the picker,
+   then the parsed events and the suggested blocks with per-block removal, then
+   Save. Loading, empty, error and the 503 "not configured" state.
+4. **AGENTS.md contract table**, which does not list either endpoint.
+
+Not proposed, deliberately: an onboarding screenshot step (concern 4, blocked by
+auth), a schedule viewer on `Me.jsx` (concern 5, no read endpoint),
+all-day-event handling (concern 3, backend behaviour).
+
+---
+
+*Phases 2 to 4 of this pass are appended below once approved.*
+
+---
+
+# Previous pass, 2026-11-08 (group lifecycle)
+
+The first integration pass, against the group lifecycle backend, is recorded in
+the commit history from `97e4679` to `9badc57`. Its findings that remain open:
+
+### For the backend owner
+
+Still open from the lifecycle pass, none acted on in this pass:
+
+1. **`lifecycle.py` has no callers.** `expire_invitations()` and
+   `advance_group_for_time()` are written, tested and never invoked, so
+   invitations never expire and no group reaches `active`. AGENTS.md makes
+   10-minute expiry a group rule and `active` a group state. This is the largest
+   gap between the spec and the running server.
+2. **`student_spots` is missing from `schema.sql`**, so `PATCH /me` accepts
+   `favourite_spots` and silently discards it, which blocks a favourite-spots
+   editor.
+3. **`CURRENT_TERM` has no default**, and `POST /students` is a 503 without it.
+4. **Matching ignores every signal**: no newcomer priority, no shared tags, no
+   shared courses. AGENTS.md asks for newcomer priority in Tier 1.
+5. **`StudentOut` omits `languages` and `ask_me_about`**, both of which
+   onboarding collects.
+6. **`PLACEHOLDER_WALK_MIN`** is a constant where a walking time should be.
+7. **`OpenGroupOut.area`** wording decision, still open.
+8. **`/auth/config` reports `guest_token_secret_set: false`** when the secret is
+   set under the compatibility name `GUEST_SESSION_SECRET`.
+
+### New, from this pass
+
+9. **`PUT /me/schedule` cannot be reached during onboarding** (concern 4). Both
+   schedule routes 403 without a profile, so the screenshot flow cannot be an
+   onboarding step. Reaching it would mean either relaxing those routes to
+   `current_user` and keying the write on something other than a student id, or
+   letting `POST /students` accept a parse result.
+10. **All-day events never count as busy** (concern 3).
+    `busy_intervals_from_extraction` reads `timed_events` only, so an all-day
+    event yields a full free day. One loop in `app/schedule.py`.
+11. **No read endpoint for confirmed free blocks** (concern 5). `StudentOut`
+    has no `free_blocks` and `PUT /me/schedule` replaces wholesale, so a saved
+    schedule can never be shown or adjusted block by block.
+12. **`/auth/config` cannot say whether parsing is configured.** It already
+    answers the same question for Auth0, the guest secret and demo mode. A
+    `schedule_parsing_configured` boolean would let the upload entry point
+    explain itself before the student picks a file, instead of after.
+13. **`GEMINI_MODEL` defaults to `gemini-3.8-flash`** and
+    `genai.Client(enterprise=True, …)` are both unverifiable without a key.
+    Worth one real call before the demo.
