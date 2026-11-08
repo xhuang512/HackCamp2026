@@ -47,7 +47,7 @@ def main() -> int:
         DatabaseConnectionError,
         RepositoryError,
     ) as exc:
-        parser.error(str(exc))
+        parser.error(_format_cli_error(exc))
 
     action = "created" if args.apply else "planned"
     group_count = (
@@ -68,6 +68,34 @@ def main() -> int:
             f"{len(plan.student_ids)} students"
         )
     return 0
+
+
+def _format_cli_error(error: Exception) -> str:
+    """Include PostgREST diagnostics for this development-only command."""
+    lines = [str(error)]
+    cause = error.__cause__
+    if cause is None:
+        return lines[0]
+
+    fields = {
+        name: _error_attribute(cause, name)
+        for name in ("code", "message", "details", "hint")
+    }
+    if any(value is not None for value in fields.values()):
+        lines.append("Supabase/PostgREST error:")
+        lines.extend(
+            f"  {name}: {value}"
+            for name, value in fields.items()
+            if value is not None
+        )
+    return "\n".join(lines)
+
+
+def _error_attribute(error: BaseException, name: str) -> str | None:
+    value = getattr(error, name, None)
+    if value is None and error.args and isinstance(error.args[0], dict):
+        value = error.args[0].get(name)
+    return str(value) if value is not None else None
 
 
 if __name__ == "__main__":

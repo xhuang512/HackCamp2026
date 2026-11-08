@@ -47,8 +47,6 @@ if [[ "${existing_students}" == "t" ]]; then
 fi
 
 psql "${SUPABASE_DB_URL}" -X -v ON_ERROR_STOP=1 \
-  -f "${sql_dir}/001_core_schema.sql"
-psql "${SUPABASE_DB_URL}" -X -v ON_ERROR_STOP=1 \
-  -f "${sql_dir}/002_group_lifecycle.sql"
+  -f "${sql_dir}/schema.sql"
 
 echo "Lifecycle V2 schema installed in the confirmed disposable project."

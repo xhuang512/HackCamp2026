@@ -1,5 +1,5 @@
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -10,6 +10,7 @@ from app.engine import form_groups
 from app.matching import run_matching
 from app.main import app
 from app.repositories import RecordNotFoundError
+from app.timezones import APPLICATION_TIMEZONE
 from tests.fakes import FakeSupabase, seed_tables
 
 
@@ -198,7 +199,10 @@ class MatchingPersistenceTests(unittest.TestCase):
         self.assertEqual(len(result.created_group_ids), 1)
         group = self.database.tables["groups"][0]
         self.assertEqual(group["status"], "forming")
-        self.assertIn("invite_expires_at", group)
+        self.assertEqual(
+            group["invite_expires_at"],
+            "2026-11-10T12:50:00-07:00",
+        )
         self.assertEqual(
             {
                 membership["invitation_status"]
@@ -352,6 +356,31 @@ class MatchingPersistenceTests(unittest.TestCase):
             "invitation_status": status,
             "arrived_at": None,
         }
+
+
+class VancouverTimezoneTests(unittest.TestCase):
+    def test_historical_pst_and_pdt_offsets(self) -> None:
+        winter = datetime(2025, 1, 15, 13, tzinfo=APPLICATION_TIMEZONE)
+        summer = datetime(2025, 7, 15, 13, tzinfo=APPLICATION_TIMEZONE)
+
+        self.assertEqual(winter.utcoffset(), timedelta(hours=-8))
+        self.assertEqual(summer.utcoffset(), timedelta(hours=-7))
+        self.assertEqual(winter.astimezone(timezone.utc).hour, 21)
+        self.assertEqual(summer.astimezone(timezone.utc).hour, 20)
+
+    def test_post_transition_vancouver_uses_permanent_utc_minus_seven(self) -> None:
+        meeting_start = datetime(2026, 11, 10, 13, tzinfo=APPLICATION_TIMEZONE)
+        deadline = meeting_start - timedelta(minutes=10)
+
+        self.assertEqual(meeting_start.utcoffset(), timedelta(hours=-7))
+        self.assertEqual(
+            meeting_start.astimezone(timezone.utc).isoformat(),
+            "2026-11-10T20:00:00+00:00",
+        )
+        self.assertEqual(
+            deadline.astimezone(timezone.utc).isoformat(),
+            "2026-11-10T19:50:00+00:00",
+        )
 
 
 class AutomaticMatchingTests(unittest.TestCase):

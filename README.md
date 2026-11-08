@@ -156,8 +156,8 @@ npm run preview   # Preview the production build
 
 ## Database Setup
 
-Apply `backend/sql/001_core_schema.sql` to the Supabase project, then seed the
-controlled onboarding catalogs:
+Apply `backend/sql/schema.sql` once to a completely fresh Supabase project, then
+seed the controlled onboarding catalogs:
 
 ```bash
 cd backend
@@ -167,29 +167,20 @@ cd backend
 The backend uses the service-role key for privileged database access. Browser
 clients call FastAPI and do not receive that key.
 
-### Group lifecycle migration rollout
+### Lifecycle V2 schema
 
-Lifecycle V2 is the only schema supported by the backend. A fresh database must
-apply `backend/sql/001_core_schema.sql` followed by
-`backend/sql/002_group_lifecycle.sql` before the API starts accepting traffic.
-The second migration renames `group_members.response` to `invitation_status`,
-adds lifecycle timestamps and constraints, and installs the atomic
-`respond_to_group_invitation` RPC.
+Lifecycle V2 is the only schema supported by the backend. The canonical schema
+creates the final `groups` and `group_members` tables directly, enables RLS,
+installs the atomic `respond_to_group_invitation` RPC, and grants that RPC only
+to the service role. It also uses current Vancouver timezone rules for meeting
+deadlines; install the backend's pinned dependencies so Python uses matching
+IANA timezone data.
 
-For an existing V1 database, use a coordinated maintenance deployment:
-
-1. Back up the database and pause all API and matching writes.
-2. Verify that the live schema still has `groups_status_check`,
-   `group_members_response_check`, and `group_members.response` from migration
-   001. The migration is intended to run exactly once.
-3. Apply `backend/sql/002_group_lifecycle.sql` in Supabase.
-4. Deploy/restart this V2-only backend, then resume writes.
-
-Do not deploy this backend against a V1 database: it always queries
-`invitation_status` and calls `respond_to_group_invitation`. Likewise, do not
-resume an older backend after applying migration 002. The migration is not
-applied automatically by application startup and must first be exercised in a
-disposable or staging Supabase project.
+`schema.sql` is a fresh-install schema, not an upgrade script. Do not apply it
+over an existing database. A database that was already initialized with the
+former migration sequence should be inspected separately before any schema
+changes. Schema installation is never performed automatically at application
+startup.
 
 ### Live Supabase integration validation
 
@@ -243,9 +234,8 @@ backend/scripts/setup_lifecycle_test_db.sh
 
 The setup script refuses a database that already contains `public.students`,
 requires the project reference to appear in `SUPABASE_DB_URL`, and applies
-`001_core_schema.sql` followed by `002_group_lifecycle.sql` with PostgreSQL's
-stop-on-first-error behavior. None of these SQL-setup variables are required by
-the backend or API integration tests.
+`schema.sql` with PostgreSQL's stop-on-first-error behavior. None of these
+SQL-setup variables are required by the backend or API integration tests.
 
 ## Frontend API integration contract
 

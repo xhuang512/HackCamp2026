@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
@@ -13,12 +12,12 @@ from supabase import create_client
 from app.auth import create_guest_session
 from app.db import ROOT_ENV_FILE, create_supabase_client, get_db_client
 from app.main import app
+from app.timezones import APPLICATION_TIMEZONE
 
 
 load_dotenv(ROOT_ENV_FILE, override=False)
 RUN_INTEGRATION = os.getenv("RUN_SUPABASE_INTEGRATION") == "1"
 WRITE_CONFIRMATION = "YES_I_AM_USING_A_SAFE_TEST_DATABASE"
-APPLICATION_TIMEZONE = ZoneInfo("America/Vancouver")
 
 
 @unittest.skipUnless(
@@ -187,6 +186,45 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
         self.assertEqual(group["status"], "confirmed")
         self.assertIsNotNone(group["confirmed_at"])
 
+    def test_vancouver_deadline_constraint_covers_pst_pdt_and_current_rules(self) -> None:
+        cases = (
+            (datetime(2025, 1, 15, 13, tzinfo=APPLICATION_TIMEZONE), -8),
+            (datetime(2025, 7, 15, 13, tzinfo=APPLICATION_TIMEZONE), -7),
+            (datetime(2026, 11, 10, 13, tzinfo=APPLICATION_TIMEZONE), -7),
+        )
+        for meeting_start, expected_offset_hours in cases:
+            with self.subTest(meeting_start=meeting_start):
+                self.assertEqual(
+                    meeting_start.utcoffset(),
+                    timedelta(hours=expected_offset_hours),
+                )
+                row = (
+                    self.client.table("groups")
+                    .insert(
+                        self._group_payload(
+                            meeting_start,
+                            meeting_start - timedelta(minutes=10),
+                        )
+                    )
+                    .execute()
+                    .data[0]
+                )
+                self.created_group_ids.add(str(row["id"]))
+
+        meeting_start = datetime(2025, 7, 15, 13, tzinfo=APPLICATION_TIMEZONE)
+        with self.assertRaises(Exception) as raised:
+            (
+                self.client.table("groups")
+                .insert(
+                    self._group_payload(
+                        meeting_start,
+                        meeting_start + timedelta(seconds=1),
+                    )
+                )
+                .execute()
+            )
+        self.assertEqual(getattr(raised.exception, "code", None), "23514")
+
     def _register(self, name: str) -> dict[str, str]:
         # Automatic matching is covered by deterministic repository tests. It is
         # suppressed here so a shared staging database cannot pull unrelated
@@ -258,6 +296,23 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
             ]
         ).execute()
         return group_id
+
+    def _group_payload(
+        self,
+        meeting_start: datetime,
+        invite_expires_at: datetime,
+    ) -> dict[str, object]:
+        return {
+            "on_date": meeting_start.date().isoformat(),
+            "start_time": meeting_start.time().isoformat(timespec="seconds"),
+            "end_time": (meeting_start + timedelta(hours=1)).time().isoformat(
+                timespec="seconds"
+            ),
+            "building_id": self.building_id,
+            "mode": "social",
+            "status": "forming",
+            "invite_expires_at": invite_expires_at.isoformat(),
+        }
 
     @staticmethod
     def _session(student_id: str) -> dict[str, str]:

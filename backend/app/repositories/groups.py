@@ -1,11 +1,9 @@
 from datetime import date, datetime, time, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.repositories.base import RecordNotFoundError, RepositoryError, execute
+from app.timezones import APPLICATION_TIMEZONE
 
-
-APPLICATION_TIMEZONE = ZoneInfo("America/Vancouver")
 
 
 class GroupRepository:

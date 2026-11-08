@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.engine import GroupPlan, form_groups
 from app.repositories import RepositoryError
@@ -10,8 +9,8 @@ from app.repositories.free_blocks import FreeBlockRepository
 from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.students import StudentRepository
+from app.timezones import APPLICATION_TIMEZONE
 
-APPLICATION_TIMEZONE = ZoneInfo("America/Vancouver")
 ACTIVE_INVITATION_STATUSES = {"invited", "accepted"}
 
 

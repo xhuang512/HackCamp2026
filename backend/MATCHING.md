@@ -6,8 +6,8 @@ languages, newcomer priority, or walking distance yet.
 
 ## Prerequisites
 
-Apply `sql/001_core_schema.sql`, then configure the root `.env` with backend-only
-values:
+Apply `sql/schema.sql` to a fresh project, then configure the root `.env` with
+backend-only values:
 
 ```dotenv
 SUPABASE_URL=
