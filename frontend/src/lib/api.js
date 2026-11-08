@@ -76,16 +76,21 @@ async function bearer() {
 
 async function request(path, { method = 'GET', body, signal } = {}) {
   const token = await bearer()
+  /* POST /schedule/parse is the one route that sends a file. FormData must go
+     out as-is and without a Content-Type header, because only the browser
+     knows the multipart boundary it generated. Setting the header by hand
+     here is what makes FastAPI answer 422 on a perfectly good upload. */
+  const form = typeof FormData !== 'undefined' && body instanceof FormData
   let res
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
       signal,
       headers: {
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body === undefined || form ? {} : { 'Content-Type': 'application/json' }),
         ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: form ? body : JSON.stringify(body) }),
     })
   } catch (cause) {
     if (cause?.name === 'AbortError') throw cause
@@ -115,6 +120,12 @@ async function messageFor(res, method, path) {
   try {
     const body = await res.json()
     if (typeof body?.detail === 'string') return body.detail
+    /* A 422 from pydantic's own validation is a list of errors rather than a
+       sentence, and every message in it is prefixed "Value error, ". Without
+       this the student reads "PUT /me/schedule returned 422". */
+    if (Array.isArray(body?.detail) && typeof body.detail[0]?.msg === 'string') {
+      return body.detail[0].msg.replace(/^Value error, /, '')
+    }
   } catch {
     /* Not JSON, or an empty body. Fall through to the generic line. */
   }
@@ -129,7 +140,9 @@ async function messageFor(res, method, path) {
 
       { "onboarded": false }
       { "onboarded": true, "student": { id, first_name, is_guest, paused,
-                                        visibility, tags, favourite_spots },
+                                        visibility, tags, favourite_spots,
+                                        free_blocks: [{ day, start_time,
+                                                        end_time }] },
                               "badges": [{ slug, name, earned,
                                            progress: { current, target } }] }
 
@@ -324,6 +337,64 @@ export async function postCheckin(groupId, code) {
   return request(`/groups/${encodeURIComponent(groupId)}/checkin`, {
     method: 'POST',
     body: { code },
+  })
+}
+
+/* ---------- Schedule ---------- */
+
+/** POST /schedule/parse — read a timetable screenshot into suggested blocks.
+
+    Sends the image as multipart form data. The backend passes it to Gemini,
+    returns suggestions, and keeps nothing: no file on disk, no row, no copy
+    in the response. Nothing here may change that, because the promise that
+    a timetable stays private to its owner is the reason students upload one.
+
+      { timed_events: [{ weekday, date, start_time, end_time, title,
+                         course_code, event_type }],
+        all_day_events: [{ weekday, date, title, event_type }],
+        warnings: [string],
+        suggested_free_blocks: [{ day, start_time, end_time }],
+        matching_window: { timezone, days, start_time, end_time },
+        availability_status: "suggested_not_confirmed" }
+
+    Throws ApiError with status 503 when no Gemini key is configured, and 422
+    when the image is not a readable timetable. ScheduleEditor turns both into
+    their own sentence, so keep the status on the error. */
+export async function parseSchedule(image, { signal } = {}) {
+  if (USE_FIXTURES) {
+    return {
+      timed_events: [],
+      all_day_events: [],
+      warnings: ['Fixture mode does not look at the image you chose.'],
+      suggested_free_blocks: [
+        { day: 1, start_time: '13:00', end_time: '15:00' },
+        { day: 3, start_time: '09:30', end_time: '11:00' },
+      ],
+      matching_window: {
+        timezone: 'America/Vancouver',
+        days: [0, 1, 2, 3, 4],
+        start_time: '09:00',
+        end_time: '18:00',
+      },
+      availability_status: 'suggested_not_confirmed',
+    }
+  }
+  const form = new FormData()
+  form.append('image', image)
+  return request('/schedule/parse', { method: 'POST', body: form, signal })
+}
+
+/** PUT /me/schedule — replace the caller's free blocks with reviewed ones.
+
+    A replace, not a merge. Whatever is sent becomes the whole schedule, which
+    is why ScheduleEditor must open with the blocks GET /me returned.
+
+      { status: "saved", free_blocks: [{ day, start_time, end_time }] } */
+export async function saveSchedule(freeBlocks) {
+  if (USE_FIXTURES) return { status: 'saved', free_blocks: freeBlocks }
+  return request('/me/schedule', {
+    method: 'PUT',
+    body: { free_blocks: freeBlocks },
   })
 }
 
