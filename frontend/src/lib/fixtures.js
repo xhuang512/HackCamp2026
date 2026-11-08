@@ -14,7 +14,11 @@ export const meNow = {
     id: 'g_41',
     state: 'confirmed',
     mode: 'social',
-    members: ['You', 'Ji-woo', 'Amir'],
+    members: [
+      { first_name: 'You', top_badge: { slug: 'regular', name: 'Regular' } },
+      { first_name: 'Ji-woo', top_badge: { slug: 'first_hello', name: 'First Hello' } },
+      { first_name: 'Amir', top_badge: null },
+    ],
     shared: ['STAT 302', '2 transfers', 'Speaks Korean'],
     /* No spot while my_state is 'invited'. The backend will not send one:
        spot_is_visible_to() in app/groups_view.py needs the caller to have
@@ -56,7 +60,7 @@ export function startedGroup({ building, mode }) {
     id: 'g_new',
     state: 'forming',
     mode,
-    members: ['You'],
+    members: [{ first_name: 'You', top_badge: null }],
     shared: [],
     /* Forming, so no spot comes back even though the student picked the
        building. The screen remembers their own choice instead. */
@@ -109,6 +113,27 @@ export const projector = {
     { slug: 'koerner', name: 'Koerner Library', lat: 49.2659, lng: -123.2555, count: 5 },
   ],
 }
+
+export const badges = [
+  {
+    slug: 'first_hello',
+    name: 'First Hello',
+    earned: true,
+    progress: { current: 1, target: 1 },
+  },
+  {
+    slug: 'regular',
+    name: 'Regular',
+    earned: false,
+    progress: { current: 1, target: 3 },
+  },
+  {
+    slug: 'familiar_face',
+    name: 'Familiar Face',
+    earned: false,
+    progress: { current: 1, target: 5 },
+  },
+]
 
 /* ---------- Onboarding options ----------
    Mirrors GET /options, whose ids come from the database lookup tables. */

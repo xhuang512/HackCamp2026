@@ -129,13 +129,17 @@ async function messageFor(res, method, path) {
 
       { "onboarded": false }
       { "onboarded": true, "student": { id, first_name, is_guest, paused,
-                                        visibility, tags, favourite_spots } }
+                                        visibility, tags, favourite_spots },
+                              "badges": [{ slug, name, earned,
+                                           progress: { current, target } }] }
 
     A student with deleted_at set counts as not onboarded. */
 export async function getMe({ signal } = {}) {
   if (USE_FIXTURES) {
     const student = readFixtureStudent()
-    return student === null ? { onboarded: false } : { onboarded: true, student }
+    return student === null
+      ? { onboarded: false, badges: [] }
+      : { onboarded: true, student, badges: fixtures.badges }
   }
   return request('/me', { signal })
 }
@@ -236,7 +240,9 @@ export async function getOptions({ signal } = {}) {
 /** GET /me/now — the next gap and the suggested group.
 
       { gap: { day, start, end } | null,
-        group: { id, state, mode, members, shared, spot, joined_count,
+        group: { id, state, mode,
+                 members: [{ first_name, top_badge: { slug, name } | null }],
+                 shared, spot, joined_count,
                  checked_in_count, seats_left, my_state, needs } | null }
 
     `group` is null when nothing has been suggested, and the screen falls back
@@ -303,10 +309,17 @@ export async function getCheckinCode(groupId, { signal } = {}) {
 /** POST /groups/{id}/checkin — submit a groupmate's scanned code.
 
     Checks both people in. `counted` is false when the pair had already
-    checked each other in: the scan worked and changed nothing. */
+    checked each other in: the scan worked and changed nothing. `new_badges`
+    contains only thresholds the caller crossed during this request. */
 export async function postCheckin(groupId, code) {
   if (USE_FIXTURES) {
-    return { joined_count: 3, checked_in_count: 2, my_state: 'checked_in', counted: true }
+    return {
+      joined_count: 3,
+      checked_in_count: 2,
+      my_state: 'checked_in',
+      counted: true,
+      new_badges: [{ slug: 'first_hello', name: 'First Hello' }],
+    }
   }
   return request(`/groups/${encodeURIComponent(groupId)}/checkin`, {
     method: 'POST',

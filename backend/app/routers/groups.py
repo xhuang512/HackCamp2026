@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from supabase import Client
 
 from app import codes, store
+from app.badges import badges_for, newly_earned_badges
 from app.auth import get_current_student_id, onboarded_user
 from app.constants import (
     CONFIRMED,
@@ -458,8 +459,16 @@ def post_checkin(
         raise HTTPException(status_code=422, detail="That code is not valid.")
 
     try:
+        before_badges = badges_for(
+            student_id,
+            members.list_for_student(student_id),
+        )
         changed = members.mark_arrived(id, (student_id, scanned_id))
         refreshed = members.list_for_group(id)
+        after_badges = badges_for(
+            student_id,
+            members.list_for_student(student_id),
+        )
     except RepositoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -472,4 +481,5 @@ def post_checkin(
         checked_in_count=len(checked_in_members(refreshed)),
         my_state=state_of(mine) if mine is not None else "invited",
         counted=changed > 0,
+        new_badges=newly_earned_badges(before_badges, after_badges),
     )

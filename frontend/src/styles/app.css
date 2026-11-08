@@ -243,15 +243,36 @@
 
 /* ---------- Avatars ---------- */
 
-.avatars {
-  display: flex;
-  gap: var(--s-2);
-  align-items: center;
+.members {
+  display: grid;
+  gap: var(--s-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+.member {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.member__name {
+  font-size: var(--t-14);
+  font-weight: var(--w-semibold);
+  color: var(--c-ink);
+}
+
+.member__badge {
+  margin-left: auto;
+  padding: 4px var(--s-4);
+  border-radius: var(--r-pill);
+  background: var(--c-accent-wash);
+  color: var(--c-accent-dark);
+  font-size: var(--t-12);
+  font-weight: var(--w-semibold);
+}
 
 
 /* 36px, down from 52px. The frames draw 30px in a list and a little more
@@ -694,6 +715,46 @@
 .me-count__label {
   font-size: var(--t-15);
   color: var(--c-ink-2);
+}
+
+.achievements {
+  display: grid;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievement {
+  min-height: var(--tap-lg);
+  padding: var(--s-5) var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-accent-wash);
+  color: var(--c-accent-dark);
+}
+
+.achievement--locked {
+  background: var(--c-surface);
+  color: var(--c-ink-3);
+}
+
+.achievement__icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.achievement__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
 }
 
 /* A real checkbox, styled. The input stays the hit target. */

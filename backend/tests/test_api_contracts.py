@@ -56,6 +56,14 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["onboarded"])
         self.assertTrue(response.json()["student"]["is_guest"])
+        self.assertEqual(
+            [badge["slug"] for badge in response.json()["badges"]],
+            ["first_hello", "regular", "familiar_face"],
+        )
+        self.assertEqual(
+            response.json()["badges"][1]["progress"],
+            {"current": 0, "target": 3},
+        )
 
     def test_create_student_returns_guest_session(self) -> None:
         response = self.client.post(
@@ -172,9 +180,43 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(first.json()["checked_in_count"], 2)
         self.assertEqual(first.json()["my_state"], "checked_in")
         self.assertTrue(first.json()["counted"])
+        self.assertEqual(
+            first.json()["new_badges"],
+            [{"slug": "first_hello", "name": "First Hello"}],
+        )
         # Scanning the same person twice changes nothing.
         self.assertEqual(again.json()["checked_in_count"], 2)
         self.assertFalse(again.json()["counted"])
+        self.assertEqual(again.json()["new_badges"], [])
+
+    def test_joined_caller_sees_top_badges_only_for_joined_members(self) -> None:
+        for membership in self.database.tables["group_members"]:
+            membership["invitation_status"] = "accepted"
+        self.database.tables["group_members"].extend(
+            [
+                {
+                    "group_id": f"past-{index}",
+                    "student_id": "s_other",
+                    "invitation_status": "accepted",
+                    "arrived_at": f"2026-10-{index + 1:02d}T12:00:00Z",
+                }
+                for index in range(3)
+            ]
+        )
+
+        response = self.client.get("/groups/g_41", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["members"],
+            [
+                {"first_name": "Maya", "top_badge": None},
+                {
+                    "first_name": "Amir",
+                    "top_badge": {"slug": "regular", "name": "Regular"},
+                },
+            ],
+        )
 
     def test_checkin_rejects_a_code_from_outside_the_group(self) -> None:
         for membership in self.database.tables["group_members"]:

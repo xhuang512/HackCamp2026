@@ -18,16 +18,21 @@ function initials(name) {
 }
 
 export default function AvatarRow({ members }) {
+  const names = members.map((member) => member.first_name)
   return (
-    <ul className="avatars" aria-label={`In this group: ${members.join(', ')}`}>
-      {members.map((name, i) => (
-        <li
-          key={name}
-          className={name === 'You' ? 'avatar avatar--you' : `avatar avatar--${(i % 3) + 1}`}
-          title={name}
-        >
-          <span aria-hidden="true">{initials(name)}</span>
-          <span className="sr-only">{name}</span>
+    <ul className="members" aria-label={`In this group: ${names.join(', ')}`}>
+      {members.map((member, i) => (
+        <li key={member.first_name} className="member">
+          <span
+            className={member.first_name === 'You' ? 'avatar avatar--you' : `avatar avatar--${(i % 3) + 1}`}
+            aria-hidden="true"
+          >
+            {initials(member.first_name)}
+          </span>
+          <span className="member__name">{member.first_name}</span>
+          {member.top_badge && (
+            <span className="member__badge">{member.top_badge.name}</span>
+          )}
         </li>
       ))}
     </ul>

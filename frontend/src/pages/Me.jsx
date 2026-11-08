@@ -10,7 +10,7 @@ import Icon from '../components/Icon.jsx'
 /* Styled from Figma frames 8081:2 (My profile) and 8081:92 (Settings).
 
    Most of what those frames show is not built and is not meant to be:
-   badges and a Super Host role are Tier 3, and pronouns, major, minor, a
+   a Super Host role, pronouns, major, minor, a
    bio and a favourite spot are fields no endpoint returns. What is here is
    what the API has, wearing the frames' type, fills and corners.
 
@@ -220,6 +220,34 @@ export default function Me() {
               </div>
             </div>
           )}
+
+          <section className="section" aria-labelledby="badges-title">
+            <h2 className="section__title" id="badges-title">Badges</h2>
+            {data.badges.length === 0 ? (
+              <p className="row__meta">Your check-in badges will appear here.</p>
+            ) : (
+              <ul className="achievements">
+                {data.badges.map((badge) => (
+                  <li
+                    key={badge.slug}
+                    className={badge.earned ? 'achievement' : 'achievement achievement--locked'}
+                  >
+                    <span className="achievement__icon">
+                      <Icon name={badge.earned ? 'badge' : 'lock'} size={22} />
+                    </span>
+                    <span className="achievement__text">
+                      <span className="row__name">{badge.name}</span>
+                      <span className="row__meta">
+                        {badge.earned
+                          ? 'Earned'
+                          : `${badge.progress.current} of ${badge.progress.target} check-ins`}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           <div className="section">
             <h2 className="section__title">Settings</h2>
