@@ -206,6 +206,18 @@ async def parse_schedule(
             detail="Schedule parsing is temporarily unavailable; please try again",
         ) from exc
 
+    # Section 3 of docs/feature-plans.md asks for two distinguishable parse
+    # failures: 503 when parsing is switched off, and 422 when this image is
+    # not a timetable. A model that reads no events at all is the second case.
+    # It is not a 502, because nothing failed; the picture was wrong. Leaving
+    # it a 200 is worse than either, because the editor would then replace a
+    # real schedule with an empty one and call that success.
+    if not extraction.timed_events and not extraction.all_day_events:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="No timetable events were found in this image",
+        )
+
     suggestions = suggest_free_blocks(
         busy_intervals_from_extraction(extraction),
         window_start=matching_window.start_time,

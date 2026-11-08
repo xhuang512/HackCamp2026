@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
@@ -32,6 +33,12 @@ export default function Me() {
   const [pausing, setPausing] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [actionError, setActionError] = useState(null)
+
+  /* Set by ScheduleEditor as it navigates back, so the confirmation lands on
+     this screen instead of flashing on the one being left. Read once per
+     arrival: it lives in the history entry, so it is gone on the next open
+     and there is no flag to clear. */
+  const savedBlocks = useLocation().state?.scheduleSaved ?? null
 
   /* The canonical tag list, the same source onboarding reads. A second
      hardcoded list here is how the two drift until a saved tag stops
@@ -249,6 +256,13 @@ export default function Me() {
             )}
           </section>
 
+          {savedBlocks !== null && (
+            <p className="inline-message" role="status">
+              Schedule saved. Right now will use your {savedBlocks} free{' '}
+              {savedBlocks === 1 ? 'block' : 'blocks'} from its next open.
+            </p>
+          )}
+
           <div className="section">
             <h2 className="section__title">Settings</h2>
 
@@ -281,12 +295,17 @@ export default function Me() {
               </select>
             </label>
 
-            <div className="row">
-              <div className="row__text">
-                <span className="row__name">Your timetable</span>
-                <span className="row__meta">Private. Nobody else can see it.</span>
-              </div>
-            </div>
+            <Link className="row row--link" to="/me/schedule">
+              <span className="row__text">
+                <span className="row__name">Update schedule</span>
+                <span className="row__meta">
+                  {student.free_blocks.length === 0
+                    ? 'Private. Nobody else can see it.'
+                    : `${student.free_blocks.length} free ${student.free_blocks.length === 1 ? 'block' : 'blocks'} a week. Private.`}
+                </span>
+              </span>
+              <span className="row__go" aria-hidden="true">›</span>
+            </Link>
 
             <p className="note note--sm">
               <Icon name="lock" size={20} />

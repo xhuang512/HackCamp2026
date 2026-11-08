@@ -1735,3 +1735,121 @@
 .me-halo {
   fill: var(--c-me-halo);
 }
+
+/* ---------- Schedule editor ----------
+
+   Section 3 of docs/feature-plans.md. Every colour here is a token, and
+   every tappable thing clears 44px, which on this screen means the Remove
+   buttons as much as the two time fields beside them. */
+
+/* The row on Me that opens the editor. An <a>, not a button, because it goes
+   somewhere, so a long press offers "open in new tab" and the phone's back
+   gesture comes back here. */
+.row--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.row__go {
+  color: var(--c-ink-3);
+  font-size: var(--t-22);
+  line-height: 1;
+}
+
+/* Hidden from sight but not from the accessibility tree or the keyboard, so
+   the visible button beside it stays the one thing anybody taps. Keeping it
+   focusable is why this is not display: none. */
+.schedule-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.schedule-warnings {
+  padding: var(--s-5) var(--s-6);
+  border-radius: var(--r-sm);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+}
+
+.schedule-warnings ul {
+  margin: var(--s-2) 0 0;
+  padding-left: var(--s-9);
+  font-size: var(--t-14);
+}
+
+.schedule-day {
+  padding: var(--s-6);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.schedule-day__name {
+  margin: 0;
+  font-size: var(--t-16);
+  font-weight: var(--w-semibold);
+  color: var(--c-ink);
+}
+
+.schedule-day__add {
+  align-self: flex-start;
+}
+
+/* Two time fields, a joining word and Remove. At 390px the four of them fit
+   on one line only because the fields are sized in ch rather than stretched,
+   and they wrap rather than overflow on anything narrower. */
+.schedule-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.schedule-block__time {
+  /* A time input is as wide as its locale's own text, which differs between
+     a 24-hour and a 12-hour phone, so it gets room for the wider one. */
+  flex: 0 1 auto;
+  min-width: 7.5rem;
+  padding: 0 var(--s-4);
+}
+
+.schedule-block__to {
+  font-size: var(--t-14);
+  color: var(--c-ink-3);
+}
+
+.schedule-block__remove {
+  margin-left: auto;
+}
+
+.schedule-actions {
+  padding: var(--s-9) var(--gutter) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.schedule-actions .btn {
+  width: 100%;
+}
+
+/* The two error lines and the merge offer sit outside .section, so they need
+   the page's own gutter to line up with everything above them. */
+.schedule-actions ~ .note,
+.app__screen > .inline-message {
+  margin: var(--s-4) var(--gutter) 0;
+}
+
+.app__screen > .inline-error {
+  margin: var(--s-4) var(--gutter) 0;
+}

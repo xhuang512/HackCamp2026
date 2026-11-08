@@ -65,6 +65,45 @@ class ApiContractTests(unittest.TestCase):
             {"current": 0, "target": 3},
         )
 
+    def test_me_returns_the_timetable_the_schedule_editor_opens_with(self) -> None:
+        """GET /me carries free_blocks, in PUT /me/schedule's own shape.
+
+        The editor needs the current blocks to open with. Without them it
+        opens empty, and because PUT /me/schedule replaces the whole set, the
+        first save would wipe the schedule the student picked at onboarding.
+        The field names match the PUT body so the round trip needs no
+        translation on either side.
+        """
+        store.update(
+            "s_current",
+            free_blocks=[
+                (3, time(14, 0), time(16, 0)),
+                (1, time(9, 0), time(10, 30)),
+            ],
+        )
+
+        response = self.client.get("/me", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["student"]["free_blocks"],
+            [
+                {"day": 1, "start_time": "09:00", "end_time": "10:30"},
+                {"day": 3, "start_time": "14:00", "end_time": "16:00"},
+            ],
+        )
+
+    def test_me_returns_an_empty_timetable_rather_than_omitting_it(self) -> None:
+        """A student with no blocks reads as [], never a missing key.
+
+        The editor branches on the list's length. A missing key would make it
+        open with "undefined" blocks and crash on the first render.
+        """
+        response = self.client.get("/me", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["student"]["free_blocks"], [])
+
     def test_create_student_returns_guest_session(self) -> None:
         response = self.client.post(
             "/students",
