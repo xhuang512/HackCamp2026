@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.main import app
+from app.lifecycle_refresh import refresher
 from app.repositories import RepositoryError
 from app.repositories.group_members import GroupMemberRepository
 from app import store
@@ -35,11 +36,13 @@ class LifecycleApiTests(unittest.TestCase):
         self._mirror_students_into_the_store()
         app.dependency_overrides[get_db_client] = lambda: self.database
         self.client = TestClient(app)
+        refresher._last_run = None
 
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
         store.reset()
         self.environment.stop()
+        refresher._last_run = None
 
     def _mirror_students_into_the_store(self) -> None:
         """Give every seeded Supabase student an in-memory profile too.
@@ -180,6 +183,11 @@ class LifecycleApiTests(unittest.TestCase):
         self.assertEqual(joined.status_code, 409)
         self.assertEqual(suggestion.status_code, 200)
         self.assertEqual(suggestion.json(), {"gap": None, "group": None})
+        self.assertEqual(self.database.tables["groups"][0]["status"], "dissolved")
+        self.assertEqual(
+            self._membership("s_current")["invitation_status"],
+            "expired",
+        )
 
     def test_repeated_join_and_skip_are_idempotent(self) -> None:
         first_join = self._post_as("s_current", "/groups/g_41/join")
@@ -226,6 +234,19 @@ class LifecycleApiTests(unittest.TestCase):
             suggestion_error.json(),
             {"detail": "Could not load the current group suggestion"},
         )
+
+    def test_lifecycle_refresh_error_does_not_break_read(self) -> None:
+        refresher._last_run = None
+        with (
+            patch(
+                "app.lifecycle_refresh.refresh_lifecycle_rows",
+                side_effect=RepositoryError("offline"),
+            ),
+            self.assertLogs("app.lifecycle_refresh", level="ERROR"),
+        ):
+            response = self._get_now("s_current")
+
+        self.assertEqual(response.status_code, 200)
 
     def test_malformed_group_id_is_not_reported_as_a_database_outage(self) -> None:
         with patch.object(

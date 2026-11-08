@@ -29,6 +29,7 @@ from app.groups_view import (
     live_members,
     spot_is_visible_to,
 )
+from app.lifecycle_refresh import refresh_lifecycle
 from app.models import BuildingActivity, MapResponse, MyGroupPin
 from app.repositories import RepositoryError
 from app.repositories.buildings import BuildingRepository
@@ -53,6 +54,7 @@ router = APIRouter(tags=["map"])
 def get_map(
     student: Annotated[store.Student, Depends(onboarded_user)],
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> MapResponse:
     groups = GroupRepository(client)
     members = GroupMemberRepository(client)
