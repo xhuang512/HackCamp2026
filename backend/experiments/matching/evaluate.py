@@ -190,7 +190,11 @@ def write_results(
     }
     json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(asdict(rows[0])) if rows else [])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(asdict(rows[0])) if rows else [],
+            lineterminator="\n",
+        )
         if rows:
             writer.writeheader()
             writer.writerows(asdict(row) for row in rows)
