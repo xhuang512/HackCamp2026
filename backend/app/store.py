@@ -40,6 +40,8 @@ class Student:
     paused: bool = False
     tags: list[str] = field(default_factory=list)
     languages: list[str] = field(default_factory=list)
+    # Building slugs, best first, at most three. Feeds engine.pick_spot.
+    favourite_spots: list[str] = field(default_factory=list)
     free_blocks: list[FreeBlock] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     deleted_at: datetime | None = None
@@ -194,6 +196,23 @@ def set_paused(student_id: str, paused: bool) -> Student | None:
     if student is None:
         return None
     student.paused = paused
+    return student
+
+
+def update(student_id: str, **changes: object) -> Student | None:
+    """Apply only the fields a PATCH actually sent.
+
+    None means "leave it alone", so a Me tab that toggles pause cannot blank
+    the student's tags on the way past. Unknown field names are ignored
+    rather than setting stray attributes on the row.
+    """
+    student = _students.get(student_id)
+    if student is None:
+        return None
+    for name, value in changes.items():
+        if value is None or not hasattr(student, name):
+            continue
+        setattr(student, name, value)
     return student
 
 

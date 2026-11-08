@@ -4,8 +4,7 @@ DEMO_MODE is the one flag that changes behaviour rather than wiring. The same
 code is deployed twice, once with it on for the stage:
 
   * guest sign-in works and POST /students will issue a guest token
-  * POST /admin/reset exists
-  * the building location check on /scan is skipped
+  * POST /admin/reset exists and re-runs the seed
 
 Everything it enables is additive, so the production deployment is the plain
 one and nothing has to be removed before the demo.
@@ -37,10 +36,19 @@ AUTH0_ALGORITHMS = ["RS256"]
 
 AUTH0_READY = bool(AUTH0_DOMAIN and AUTH0_AUDIENCE)
 
-# Signs guest tokens. Generated per process when unset, so restarting the
-# server invalidates every guest session. That is fine for a demo and wrong
-# for anything else, which is why a deployed instance should set it.
-GUEST_TOKEN_SECRET = os.getenv("GUEST_TOKEN_SECRET") or os.urandom(32).hex()
+# Signs guest tokens and check-in codes. Generated per process when unset,
+# so restarting the server invalidates every guest session. That is fine for
+# a demo and wrong for anything else, which is why a deployed instance should
+# set it.
+#
+# GUEST_SESSION_SECRET is the name the team's .env and the tests already use.
+# Reading both means a secret that is set is actually used, instead of being
+# silently ignored in favour of a fresh random value on every restart.
+GUEST_TOKEN_SECRET = (
+    os.getenv("GUEST_TOKEN_SECRET")
+    or os.getenv("GUEST_SESSION_SECRET")
+    or os.urandom(32).hex()
+)
 
 # How long a guest session lasts. A stage demo is minutes, not days, and a
 # guest profile is disposable.

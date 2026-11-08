@@ -28,14 +28,17 @@ from ..repositories.reference_data import normalize_course_codes
 from ..repositories.students import StudentRepository
 from ..models import (
     DAY_NAMES,
+    MAX_FAVOURITE_SPOTS,
     AhaOut,
     CreateStudentRequest,
     CreateStudentResponse,
     GapOut,
     MeResponse,
+    PatchMeRequest,
     PausedRequest,
     StudentOut,
 )
+from ..repositories.buildings import BuildingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +49,57 @@ def _student_out(student: store.Student) -> StudentOut:
     return StudentOut(
         id=student.id,
         first_name=student.first_name,
+        is_guest=student.is_guest,
         paused=student.paused,
         visibility=student.visibility,
+        tags=student.tags,
+        favourite_spots=student.favourite_spots,
     )
+
+
+def _mirror(
+    client: Client,
+    student: store.Student,
+    *,
+    spots: list[str] | None = None,
+) -> None:
+    """Copy identity onto the Supabase row the matcher reads.
+
+    This is the fix for the one privacy rule the merge broke. Identity lives
+    in store.py, in memory, while StudentRepository.list_matchable() filters
+    the Supabase `paused` column, which nothing wrote after signup. So a
+    student who tapped pause kept being formed into groups, and AGENTS.md
+    says pause and visibility are always respected by matching.
+
+    A failed mirror is logged and swallowed on purpose. The alternative is a
+    500 on a Me tab toggle, which would leave the student unsure whether they
+    are paused. The in-memory flag is already set and the next write retries.
+    """
+    try:
+        students = StudentRepository(client)
+        students.update_profile(
+            student.id,
+            first_name=student.first_name,
+            paused=student.paused,
+            visibility=student.visibility,
+        )
+        if spots is not None:
+            students.set_spots(student.id, _spot_ids(client, spots))
+    except RepositoryError:
+        logger.exception("Could not mirror student %s into Supabase", student.id)
+
+
+def _spot_ids(client: Client, slugs: list[str]) -> list[int]:
+    """Building slugs to ids, in the order given, unknown slugs rejected."""
+    buildings = {
+        str(row["slug"]): int(row["id"]) for row in BuildingRepository(client).list_all()
+    }
+    unknown = [slug for slug in slugs if slug not in buildings]
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown building slugs: {', '.join(unknown)}"
+        )
+    return [buildings[slug] for slug in slugs]
 
 @router.get("/me", response_model=MeResponse)
 def get_me(caller: Annotated[auth.Caller, Depends(auth.current_user)]) -> MeResponse:
@@ -117,9 +168,13 @@ def create_student(
             languages=body.languages,
             ask_me_about=body.ask_me_about,
             visibility=body.visibility,
+            favourite_spots=body.favourite_spots,
             free_blocks=free_blocks,
         )
     )
+
+    if body.favourite_spots:
+        _mirror(client, student, spots=body.favourite_spots)
 
     guest_token = None
     if caller is None:
@@ -153,19 +208,61 @@ def _resolve_blocks(body: CreateStudentRequest) -> list[store.FreeBlock]:
         return list(blocks)
     return [(b.day, b.start, b.end) for b in body.free_blocks or []]
 
+@router.patch("/me", response_model=StudentOut)
+def patch_me(
+    body: PatchMeRequest,
+    student: Annotated[store.Student, Depends(auth.onboarded_user)],
+    client: Annotated[Client, Depends(get_db_client)],
+) -> StudentOut:
+    """Update name, tags, visibility, favourite spots and paused.
+
+    Partial by design: the Me tab sends the one thing the student changed.
+    Everything that reaches here also reaches the Supabase row, because
+    pause and visibility are matching rules and the matcher reads that table.
+    """
+    if body.favourite_spots is not None and len(body.favourite_spots) > MAX_FAVOURITE_SPOTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"At most {MAX_FAVOURITE_SPOTS} favourite spots",
+        )
+
+    updated = (
+        store.update(
+            student.id,
+            first_name=body.first_name,
+            tags=body.tags,
+            languages=body.languages,
+            ask_me_about=body.ask_me_about,
+            visibility=body.visibility,
+            favourite_spots=body.favourite_spots,
+            paused=body.paused,
+        )
+        or student
+    )
+    _mirror(client, updated, spots=body.favourite_spots)
+    return _student_out(updated)
+
+
 @router.post("/me/paused", response_model=StudentOut)
 def set_paused(
     body: PausedRequest,
     student: Annotated[store.Student, Depends(auth.onboarded_user)],
+    client: Annotated[Client, Depends(get_db_client)],
 ) -> StudentOut:
     """Pause or resume matching.
 
     A privacy setting, not a preference: while paused the student is in no
     group the optimizer forms, which is why the Right now screen says so
     rather than looking empty.
+
+    PATCH /me does this and more. This route stays because it is already
+    merged and the paused banner calls it, and it is now a thin alias so the
+    two cannot drift.
     """
     updated = store.set_paused(student.id, body.paused)
-    return _student_out(updated or student)
+    student = updated or student
+    _mirror(client, student)
+    return _student_out(student)
 
 @router.get("/auth/config")
 def auth_config() -> dict[str, object]:

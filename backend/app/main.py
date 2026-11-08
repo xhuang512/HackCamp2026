@@ -23,6 +23,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import auth, config
 from app.routers import admin, groups, identity, options, projector, students
+# Aliased: the module is app/routers/map.py and a bare `map` here would
+# shadow the builtin for the rest of this file.
+from app.routers import map as map_router
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
@@ -111,6 +114,7 @@ app.include_router(identity.router)
 app.include_router(students.router)
 app.include_router(options.router)
 app.include_router(groups.router)
+app.include_router(map_router.router)
 app.include_router(projector.router)
 app.include_router(admin.router)
 

@@ -1,10 +1,10 @@
 import unittest
+from datetime import date, time
 from unittest.mock import patch
 
-import jwt
 from fastapi.testclient import TestClient
 
-from app import auth, store
+from app import auth, codes, config, demo, store
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.main import app
@@ -104,7 +104,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(len(self.database.tables["students"]), original_count)
 
-    def test_now_returns_gap_and_pending_group(self) -> None:
+    def test_now_returns_gap_and_invited_group(self) -> None:
         response = self.client.get("/me/now", headers=self.auth_headers)
 
         self.assertEqual(response.status_code, 200)
@@ -113,14 +113,84 @@ class ApiContractTests(unittest.TestCase):
             body["gap"],
             {"day": "tue", "start": "13:15", "end": "14:30"},
         )
-        self.assertEqual(body["group"]["id"], "g_41")
-        self.assertEqual(body["group"]["response"], "pending")
-        self.assertEqual(body["group"]["members"], [])
-        self.assertEqual(body["group"]["shared"], ["STAT 302", "Transfer student", "English"])
-        self.assertEqual(
-            body["group"]["spot"],
-            {"building": "To be announced", "walk_min": 0},
+        group = body["group"]
+        self.assertEqual(group["id"], "g_41")
+        self.assertEqual(group["my_state"], "invited")
+        self.assertEqual(group["state"], "forming")
+        self.assertEqual(group["members"], [])
+        self.assertEqual(group["shared"], ["STAT 302", "Transfer student", "English"])
+        # One joined member of two, so the group is two short of the minimum
+        # and has no spot to show yet.
+        self.assertEqual(group["joined_count"], 1)
+        self.assertEqual(group["checked_in_count"], 0)
+        self.assertEqual(group["needs"], 2)
+        self.assertIsNone(group["spot"])
+
+    def test_now_without_a_group_still_names_the_next_gap(self) -> None:
+        self.database.tables["groups"] = []
+        self.database.tables["group_members"] = []
+        store.update(
+            "s_current",
+            free_blocks=[(1, time(13, 0), time(15, 0))],
         )
+
+        response = self.client.get("/me/now", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "gap": {"day": "tue", "start": "13:00", "end": "15:00"},
+                "group": None,
+            },
+        )
+
+    def test_checkin_checks_both_students_in_once(self) -> None:
+        for membership in self.database.tables["group_members"]:
+            membership["response"] = "joined"
+        other = codes.issue("s_other").code
+
+        first = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": other},
+            headers=self.auth_headers,
+        )
+        again = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": other},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["checked_in_count"], 2)
+        self.assertEqual(first.json()["my_state"], "checked_in")
+        self.assertTrue(first.json()["counted"])
+        # Scanning the same person twice changes nothing.
+        self.assertEqual(again.json()["checked_in_count"], 2)
+        self.assertFalse(again.json()["counted"])
+
+    def test_checkin_rejects_a_code_from_outside_the_group(self) -> None:
+        for membership in self.database.tables["group_members"]:
+            membership["response"] = "joined"
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": codes.issue("s_stranger").code},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            [m["arrived_at"] for m in self.database.tables["group_members"]],
+            [None, None],
+        )
+
+    def test_checkin_code_needs_a_joined_membership(self) -> None:
+        response = self.client.get(
+            "/groups/g_41/checkin-code", headers=self.auth_headers
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_join_returns_joined_response(self) -> None:
         response = self.client.post("/groups/g_41/join", headers=self.auth_headers)
@@ -150,20 +220,80 @@ class ApiContractTests(unittest.TestCase):
         response = self.client.get("/projector")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"joined_count": 3, "group_count": 1})
+        body = response.json()
+        # Counts and places only. Nothing in this payload identifies anyone,
+        # which is what lets the route stay public.
+        self.assertEqual(
+            set(body),
+            {"forming", "confirmed", "checked_in", "students", "dots"},
+        )
+        self.assertEqual(body["checked_in"], 0)
+        self.assertNotIn("first_name", response.text)
 
-    def test_admin_reset_returns_seed_counts(self) -> None:
-        with patch.dict("os.environ", {"DEMO_MODE": "true"}, clear=True):
+    def test_map_hides_buildings_under_the_minimum(self) -> None:
+        response = self.client.get("/map", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        # Two students at The Nest, and the floor is three, so the building
+        # is absent rather than shown with a small number on it.
+        self.assertEqual(response.json(), {"buildings": [], "my_group": None})
+
+    def test_map_shows_a_building_once_three_students_are_there(self) -> None:
+        # The map answers "what is happening right now", so it only reads
+        # today's groups. The seed group sits on the next Tuesday.
+        self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["students"].append(
+            {"id": "s_third", "first_name": "Rosa", "paused": False, "deleted_at": None}
+        )
+        self.database.tables["group_members"].append(
+            {
+                "group_id": "g_41",
+                "student_id": "s_third",
+                "response": "joined",
+                "arrived_at": None,
+            }
+        )
+
+        response = self.client.get("/map", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        buildings = response.json()["buildings"]
+        self.assertEqual(len(buildings), 1)
+        self.assertEqual(buildings[0]["slug"], "nest")
+        self.assertEqual(buildings[0]["free_count"], 3)
+
+    def test_patch_me_reaches_the_table_the_matcher_reads(self) -> None:
+        response = self.client.patch(
+            "/me", json={"paused": True}, headers=self.auth_headers
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["paused"])
+        # The point of the mirror write: pause is a matching rule, and the
+        # matcher reads this row, not the in-memory one.
+        current = next(
+            row for row in self.database.tables["students"] if row["id"] == "s_current"
+        )
+        self.assertTrue(current["paused"])
+
+    def test_admin_reset_recreates_the_seed(self) -> None:
+        with patch.object(config, "DEMO_MODE", True):
             response = self.client.post("/admin/reset")
 
         self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "reset")
+        self.assertEqual(body["seeded_buildings"], len(demo.BUILDINGS))
+        # It actually writes now. The old route returned fixed numbers and
+        # changed nothing, so step 6 of the demo check could not pass.
+        self.assertGreater(body["seeded_students"], 0)
         self.assertEqual(
-            response.json(),
-            {"status": "reset", "seeded_students": 4, "seeded_groups": 1},
+            len([row for row in self.database.tables["students"] if row.get("is_seed")]),
+            body["seeded_students"],
         )
 
     def test_admin_reset_is_disabled_outside_demo_mode(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.object(config, "DEMO_MODE", False):
             response = self.client.post("/admin/reset")
 
         self.assertEqual(response.status_code, 403)
@@ -174,11 +304,18 @@ class ApiContractTests(unittest.TestCase):
 
         self.assertTrue(
             {
+                "/me",
                 "/students",
                 "/options",
                 "/me/now",
+                "/map",
+                "/groups",
+                "/groups/open",
+                "/groups/{id}",
                 "/groups/{id}/join",
                 "/groups/{id}/skip",
+                "/groups/{id}/checkin-code",
+                "/groups/{id}/checkin",
                 "/projector",
                 "/admin/reset",
             }.issubset(paths)

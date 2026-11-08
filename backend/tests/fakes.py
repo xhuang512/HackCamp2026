@@ -25,7 +25,16 @@ def seed_tables() -> dict[str, list[dict[str, Any]]]:
         ],
         "languages": [{"code": "en", "name": "English"}],
         "courses": [{"id": 1, "code": "STAT 302", "title": "Introduction"}],
-        "buildings": [{"id": 1, "name": "The Nest"}],
+        "buildings": [
+            {
+                "id": 1,
+                "slug": "nest",
+                "name": "The Nest",
+                "lat": 49.2665,
+                "lng": -123.2497,
+                "is_indoor": True,
+            }
+        ],
         "students": [
             {
                 "id": "s_current",
@@ -69,7 +78,7 @@ def seed_tables() -> dict[str, list[dict[str, Any]]]:
                 "end_time": "14:30:00",
                 "building_id": 1,
                 "mode": "study",
-                "status": "proposed",
+                "status": "forming",
                 "created_at": "2026-11-07T00:00:00Z",
             }
         ],
@@ -77,7 +86,7 @@ def seed_tables() -> dict[str, list[dict[str, Any]]]:
             {
                 "group_id": "g_41",
                 "student_id": "s_current",
-                "response": "pending",
+                "response": "invited",
                 "arrived_at": None,
             },
             {
@@ -189,7 +198,9 @@ class FakeQuery:
                     row.setdefault("id", str(uuid4()))
                 if self.table_name == "free_blocks":
                     row.setdefault("id", len(rows) + 1)
-                if self.table_name in {"tags", "courses"}:
+                # buildings.id is a smallserial in 001_core_schema.sql, so
+                # Postgres fills it and an upsert here has to as well.
+                if self.table_name in {"tags", "courses", "buildings"}:
                     next_id = max(
                         (item.get("id", 0) for item in rows),
                         default=0,

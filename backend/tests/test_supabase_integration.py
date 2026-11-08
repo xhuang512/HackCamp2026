@@ -3,7 +3,8 @@ import unittest
 from uuid import uuid4
 
 from app.db import create_supabase_client
-from app.repositories.free_blocks import FreeBlockRepository, resolve_preset
+from app.presets import blocks_for
+from app.repositories.free_blocks import FreeBlockInput, FreeBlockRepository
 from app.repositories.students import StudentRepository
 
 
@@ -20,9 +21,18 @@ class SupabaseIntegrationTests(unittest.TestCase):
         student_id = str(created["id"])
 
         try:
+            # app/presets.py is now the only preset list. The repository's
+            # own copy had one underscored id that matched no real preset.
             free_blocks.create_for_student(
                 student_id,
-                resolve_preset("tue_thu_afternoon"),
+                tuple(
+                    FreeBlockInput(
+                        day=day,
+                        start_time=start.strftime("%H:%M"),
+                        end_time=end.strftime("%H:%M"),
+                    )
+                    for day, start, end in blocks_for("tue-thu-afternoons")
+                ),
             )
             persisted = free_blocks.list_for_student(student_id)
             self.assertEqual(len(persisted), 2)

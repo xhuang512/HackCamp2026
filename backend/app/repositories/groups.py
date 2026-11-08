@@ -1,7 +1,16 @@
 from datetime import date, time
 from typing import Any
 
+from app.constants import FORMING, LIVE_GROUP_STATES
 from app.repositories.base import RecordNotFoundError, execute
+from app.repositories.buildings import COLUMNS as BUILDING_COLUMNS
+
+COLUMNS = "id,on_date,start_time,end_time,building_id,mode,status,created_at"
+
+# What a student is shown when the group is still forming. AGENTS.md: the
+# spot is hidden until the group is confirmed, and the card says
+# "Waiting for N more to confirm" instead.
+SPOT_HIDDEN = "To be announced"
 
 
 class GroupRepository:
@@ -13,11 +22,9 @@ class GroupRepository:
             return []
         return execute(
             self.client.table("groups")
-            .select(
-                "id,on_date,start_time,end_time,building_id,mode,status,created_at"
-            )
+            .select(COLUMNS)
             .in_("id", group_ids)
-            .in_("status", ["proposed", "active"])
+            .in_("status", list(LIVE_GROUP_STATES))
             .gte("on_date", date.today().isoformat())
             .order("on_date")
             .order("start_time"),
@@ -27,15 +34,39 @@ class GroupRepository:
     def list_open_for_date(self, on_date: date) -> list[dict[str, Any]]:
         return execute(
             self.client.table("groups")
-            .select(
-                "id,on_date,start_time,end_time,building_id,mode,status,created_at"
-            )
+            .select(COLUMNS)
             .eq("on_date", on_date.isoformat())
-            .in_("status", ["proposed", "active"])
+            .in_("status", list(LIVE_GROUP_STATES))
             .order("start_time")
             .order("id"),
             "read existing groups for matching date",
         )
+
+    def list_from(self, on_date: date) -> list[dict[str, Any]]:
+        """Every live group from `on_date` onwards.
+
+        The map and the projector both need all of them rather than one
+        student's, so they cannot go through list_upcoming, which filters by
+        membership.
+        """
+        return execute(
+            self.client.table("groups")
+            .select(COLUMNS)
+            .in_("status", list(LIVE_GROUP_STATES))
+            .gte("on_date", on_date.isoformat())
+            .order("on_date")
+            .order("start_time"),
+            "read live groups",
+        )
+
+    def get(self, group_id: str) -> dict[str, Any]:
+        rows = execute(
+            self.client.table("groups").select(COLUMNS).eq("id", group_id).limit(1),
+            "read group",
+        )
+        if not rows:
+            raise RecordNotFoundError("That group does not exist")
+        return rows[0]
 
     def create(
         self,
@@ -44,6 +75,8 @@ class GroupRepository:
         start_time: time,
         end_time: time,
         building_id: int,
+        mode: str = "social",
+        status: str = FORMING,
     ) -> dict[str, Any]:
         rows = execute(
             self.client.table("groups").insert(
@@ -52,8 +85,8 @@ class GroupRepository:
                     "start_time": start_time.isoformat(timespec="minutes"),
                     "end_time": end_time.isoformat(timespec="minutes"),
                     "building_id": building_id,
-                    "mode": "social",
-                    "status": "proposed",
+                    "mode": mode,
+                    "status": status,
                 }
             ),
             "create matched group",
@@ -61,6 +94,12 @@ class GroupRepository:
         if not rows:
             raise RecordNotFoundError("Database did not return the created group")
         return rows[0]
+
+    def set_status(self, group_id: str, status: str) -> None:
+        execute(
+            self.client.table("groups").update({"status": status}).eq("id", group_id),
+            "update group status",
+        )
 
     def delete(self, group_id: str) -> None:
         execute(
@@ -70,14 +109,19 @@ class GroupRepository:
 
     def building_name(self, building_id: int | None) -> str:
         if building_id is None:
-            return "To be announced"
+            return SPOT_HIDDEN
+        return str(self.building(building_id)["name"])
+
+    def building(self, building_id: int) -> dict[str, Any]:
+        """The full building row, because the map needs its coordinates and
+        its slug, not only the name."""
         rows = execute(
             self.client.table("buildings")
-            .select("id,name")
+            .select(BUILDING_COLUMNS)
             .eq("id", building_id)
             .limit(1),
             "read group building",
         )
         if not rows:
             raise RecordNotFoundError("Group building was not found")
-        return str(rows[0]["name"])
+        return rows[0]

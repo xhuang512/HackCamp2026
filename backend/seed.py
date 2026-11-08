@@ -1,4 +1,9 @@
-"""Idempotently seed controlled onboarding reference data."""
+"""Seed the demo: reference data, buildings, fake students and their groups.
+
+Idempotent. Rows marked is_seed are replaced on each run; real signups are
+left alone. The same code runs behind POST /admin/reset, in app/demo.py, so
+the stage reset and this CLI cannot drift.
+"""
 
 import argparse
 
@@ -7,24 +12,31 @@ from app.db import (
     DatabaseConnectionError,
     create_supabase_client,
 )
+from app.demo import SEED_STUDENT_COUNT, reseed
 from app.repositories import RepositoryError
-from app.repositories.reference_data import ReferenceDataRepository
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.parse_args()
+    parser.add_argument(
+        "--students",
+        type=int,
+        default=SEED_STUDENT_COUNT,
+        help=f"How many fake students to create (default {SEED_STUDENT_COUNT})",
+    )
+    args = parser.parse_args()
     try:
-        language_count, tag_count = ReferenceDataRepository(
-            create_supabase_client()
-        ).seed_defaults()
+        result = reseed(create_supabase_client(), student_count=args.students)
     except (
         DatabaseConfigurationError,
         DatabaseConnectionError,
         RepositoryError,
     ) as exc:
         parser.error(str(exc))
-    print(f"seeded {language_count} languages and {tag_count} student tags")
+    print(
+        f"seeded {result.buildings} buildings, {result.students} students "
+        f"and {result.groups} groups"
+    )
     return 0
 
 
