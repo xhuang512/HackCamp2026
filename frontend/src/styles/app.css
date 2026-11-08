@@ -871,6 +871,51 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Courses ---------- */
+
+.courses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.courses__helper {
+  margin: 0;
+  font-size: var(--t-13);
+  color: var(--c-ink-3);
+}
+
+.courses__entry {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.courses__entry .field__input {
+  /* min-width:0 so a flex item with an intrinsic input width cannot push
+     the Add button off a 390px screen. */
+  flex: 1;
+  min-width: 0;
+}
+
+.courses__error {
+  /* Same treatment as .onboard__error, which is the app's one error look:
+     an amber rule and a tinted panel rather than red text, since the
+     palette has no danger colour and inventing one here would put the only
+     untested pair in the app on an error message. */
+  margin: 0;
+  padding: var(--s-4) var(--s-5);
+  border-left: 4px solid var(--c-live);
+  border-radius: var(--r-sm);
+  background: var(--c-live-soft);
+  color: var(--c-on-live-soft);
+  font-size: var(--t-13);
+}
+
+.chip--removable {
+  /* A chip that is a button carries the browser's default button font. */
+  font-family: inherit;
+}
+
 /* ---------- One-of-many and many-of-many ---------- */
 
 .choices {

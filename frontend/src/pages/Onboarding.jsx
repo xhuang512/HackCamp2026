@@ -11,6 +11,7 @@ import {
   writeDraft,
 } from '../lib/draft.js'
 import { LANGUAGES, PRESETS, STUDENT_TAGS, VISIBILITY_OPTIONS } from '../lib/presets.js'
+import CourseInput from '../components/CourseInput.jsx'
 import OnboardStep from '../components/OnboardStep.jsx'
 
 /* Onboarding, four questions for a student and three for a demo guest.
@@ -48,6 +49,8 @@ export default function Onboarding({ onDone }) {
   const [step, setStep] = useState(() => Math.min(resumeStep(readDraft(sub)), total))
   const [busy, setBusy] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  /* Set when POST /students refused only because of the courses. */
+  const [termBlocked, setTermBlocked] = useState(false)
   const catalog = useAsync(api.getOptions)
   const tagOptions =
     catalog.data?.tags ??
@@ -91,6 +94,7 @@ export default function Onboarding({ onDone }) {
     async (final) => {
       setBusy(true)
       setSubmitError(null)
+      setTermBlocked(false)
       try {
         const allowedTags = new Set(tagOptions.map((option) => option.id))
         const allowedLanguages = new Set(languageOptions.map((option) => option.id))
@@ -111,11 +115,25 @@ export default function Onboarding({ onDone }) {
         if (out.guest_token) auth.adoptGuestToken()
         onDone(out)
       } catch (cause) {
-        setSubmitError(
-          cause?.status === 0
-            ? 'Could not reach the server. Your answers are saved.'
-            : cause?.message ?? 'That did not save. Your answers are kept, try again.',
-        )
+        /* The server rejects courses outright when its CURRENT_TERM is
+           unset, and that 422 fails the whole request. Signup is the one
+           place in the app with nothing behind it, so rather than leaving
+           someone stuck behind a backend variable they cannot set, offer to
+           drop the courses and keep every other answer. Offered, not done
+           silently: dropping what they typed without saying so is worse
+           than the error. */
+        if (cause?.status === 422 && /CURRENT_TERM/i.test(cause?.message ?? '')) {
+          setTermBlocked(true)
+          setSubmitError(
+            'The server cannot store courses yet, because its CURRENT_TERM is not set. Finish without them, or set it on the backend and try again.',
+          )
+        } else {
+          setSubmitError(
+            cause?.status === 0
+              ? 'Could not reach the server. Your answers are saved.'
+              : cause?.message ?? 'That did not save. Your answers are kept, try again.',
+          )
+        }
       } finally {
         setBusy(false)
       }
@@ -135,6 +153,21 @@ export default function Onboarding({ onDone }) {
     },
     [draft, step, sub, submit, total],
   )
+
+  /* Shown only after POST /students has refused the courses specifically,
+     on whichever step is the last one for this student: a guest finishes at
+     3, a student at 4. It resubmits everything else, so nothing already
+     answered is lost. */
+  const termHatch = termBlocked ? (
+    <button
+      type="button"
+      className="btn btn--outline"
+      disabled={busy}
+      onClick={() => advance({ courses: [] })}
+    >
+      {busy ? 'Finishing…' : 'Finish without courses'}
+    </button>
+  ) : null
 
   const frame = {
     step,
@@ -215,7 +248,7 @@ export default function Onboarding({ onDone }) {
   }
 
   if (step === 3) {
-    const picked = draft.tags.length > 0 || draft.done >= 3
+    const picked = draft.tags.length > 0 || draft.courses.length > 0 || draft.done >= 3
     return (
       <OnboardStep
         {...frame}
@@ -262,6 +295,18 @@ export default function Onboarding({ onDone }) {
         >
           None of these
         </button>
+
+        {/* Courses belong to this question rather than a step of their own.
+            The step already asks what to match on, and AGENTS.md pins a
+            guest at three screens to get a stage audience from the join QR
+            to a group card inside 30 seconds. A fifth question would spend
+            that budget. */}
+        <CourseInput
+          value={draft.courses}
+          onChange={(courses) => answer({ courses })}
+        />
+
+        {termHatch}
 
         {!guest && (
           <>
@@ -345,6 +390,8 @@ export default function Onboarding({ onDone }) {
           </label>
         ))}
       </fieldset>
+
+      {termHatch}
     </OnboardStep>
   )
 }

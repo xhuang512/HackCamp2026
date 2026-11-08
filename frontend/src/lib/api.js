@@ -146,6 +146,16 @@ export async function getMe({ signal } = {}) {
     the verified token, so nobody can create a profile for someone else.
     Send either preset_id or free_blocks, never both.
 
+    `courses` are codes like "STAT 302", normalised by src/lib/courses.js to
+    match what the backend accepts. They are what puts a shared course at the
+    front of a group's `shared` list, which is the strongest line on a group
+    card. They do not affect who is matched: engine.form_groups() groups on
+    overlapping free time alone.
+
+    One backend requirement to know about: a non-empty `courses` with the
+    server's CURRENT_TERM unset is a 422 for the whole request. Onboarding
+    offers to retry without them rather than leaving someone stuck.
+
     Returns { student, aha, guest_token }. A guest_token comes back only when
     `guest` is true and the backend's DEMO_MODE is on; it is stored here so the
     next request is authenticated. */
@@ -154,6 +164,7 @@ export async function createStudent({
   preset_id = null,
   free_blocks = null,
   tags = [],
+  courses = [],
   languages = [],
   ask_me_about = null,
   favourite_spots = [],
@@ -165,6 +176,7 @@ export async function createStudent({
     preset_id,
     free_blocks,
     tags,
+    courses,
     languages,
     ask_me_about,
     favourite_spots,

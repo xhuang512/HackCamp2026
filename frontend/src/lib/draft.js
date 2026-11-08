@@ -32,6 +32,12 @@ export const EMPTY_DRAFT = {
   preset_id: null,
   free_blocks: null,
   tags: [],
+  /* Course codes, normalised by src/lib/courses.js before they land here.
+     Added after VERSION 1 and deliberately without bumping it: readDraft
+     spreads a saved draft over EMPTY_DRAFT, so a draft written before this
+     field existed reads it as [] rather than undefined. The version bump is
+     for shapes that change meaning, not for a new optional list. */
+  courses: [],
   languages: [],
   ask_me_about: '',
   visibility: 'everyone',
@@ -95,6 +101,7 @@ export function toStudentBody(draft, { guest }) {
     preset_id: useBlocks ? null : draft.preset_id,
     free_blocks: useBlocks ? draft.free_blocks : null,
     tags: draft.tags,
+    courses: draft.courses,
     languages: draft.languages,
     ask_me_about: draft.ask_me_about.trim() === '' ? null : draft.ask_me_about.trim(),
     visibility: draft.visibility,
