@@ -144,6 +144,30 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
+### Share the demo over HTTPS
+
+Phone cameras are available only in a secure browser context. A LAN URL such
+as `http://192.168.1.20:5173` can load the app but cannot request camera
+permission. The share script starts (or reuses) FastAPI and Vite, then opens a
+temporary Cloudflare Quick Tunnel as one HTTPS origin:
+
+```bash
+./scripts/share-demo.sh
+```
+
+Share the printed `https://*.trycloudflare.com` URL. Keep that terminal open;
+press Ctrl+C to stop the tunnel and any local servers the script started. IDE
+servers that were already running are left alone. The URL is public to anyone
+who has it, changes each run, and is intended only for development and the
+demo.
+
+`cloudflared` is already installed on the primary development machine. On a
+new Mac, install it with `brew install cloudflared`.
+
+Check-in requires two different joined members in the same group. One phone
+shows its rotating QR or copies the full `hc1…` code; a different phone scans
+or pastes it. A member cannot check in using their own code.
+
 ## Useful Commands
 
 Run the following from the `frontend/` directory:

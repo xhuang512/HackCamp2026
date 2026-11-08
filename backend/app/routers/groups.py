@@ -442,8 +442,13 @@ def post_checkin(
     # One answer for every bad code: wrong shape, bad signature, expired
     # window, or a member of another group. Telling a scanner which would
     # help nobody but a forger.
-    if scanned_id is None or scanned_id == student_id:
+    if scanned_id is None:
         raise HTTPException(status_code=422, detail="That code is not valid.")
+    if scanned_id == student_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Use a groupmate's code, not your own.",
+        )
     if not any(str(m["student_id"]) == scanned_id for m in all_members):
         raise HTTPException(status_code=422, detail="That code is not valid.")
 

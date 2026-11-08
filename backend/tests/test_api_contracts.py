@@ -192,6 +192,19 @@ class ApiContractTests(unittest.TestCase):
             [None, None],
         )
 
+    def test_checkin_explains_that_your_own_code_cannot_be_used(self) -> None:
+        for membership in self.database.tables["group_members"]:
+            membership["response"] = "joined"
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": codes.issue("s_current").code},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], "Use a groupmate's code, not your own.")
+
     def test_checkin_code_needs_a_joined_membership(self) -> None:
         response = self.client.get(
             "/groups/g_41/checkin-code", headers=self.auth_headers

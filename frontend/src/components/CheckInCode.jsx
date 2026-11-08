@@ -6,6 +6,17 @@ import StateCard from './StateCard.jsx'
 export default function CheckInCode({ groupId }) {
   const [state, setState] = useState({ loading: true, code: null, image: null, error: null })
   const [nonce, setNonce] = useState(0)
+  const [copied, setCopied] = useState(false)
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(state.code)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
 
   useEffect(() => {
     let live = true
@@ -41,6 +52,9 @@ export default function CheckInCode({ groupId }) {
       <details>
         <summary>Show typed code</summary>
         <code className="typed-code">{state.code}</code>
+        <button type="button" className="btn btn--ghost copy-code" onClick={copyCode}>
+          {copied ? 'Copied' : 'Copy full code'}
+        </button>
       </details>
     </section>
   )

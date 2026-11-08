@@ -10,6 +10,22 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
 
+  function cameraError(error) {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      return 'Camera scanning needs HTTPS. Open the Cloudflare tunnel URL, not your computer\'s http:// LAN address.'
+    }
+    if (error?.name === 'NotAllowedError') {
+      return 'Camera permission is blocked. Allow camera access for this site in your browser settings, then try again.'
+    }
+    if (error?.name === 'NotFoundError') {
+      return 'No camera was found on this device. Paste a groupmate\'s current code below.'
+    }
+    if (error?.name === 'NotReadableError') {
+      return 'Another app may be using the camera. Close it and try again.'
+    }
+    return 'The camera could not start. Paste a groupmate\'s current code below.'
+  }
+
   function stop() {
     window.cancelAnimationFrame(frameRef.current)
     streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -29,7 +45,11 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
       setMessage(result.counted ? 'You both checked in.' : 'You were already checked in together.')
       onCheckedIn(result)
     } catch (error) {
-      setMessage(error.message)
+      setMessage(
+        error.status === 422
+          ? `${error.message} Use a current code from a different phone signed into this same group.`
+          : error.message,
+      )
     } finally {
       setBusy(false)
     }
@@ -37,16 +57,23 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
 
   async function start() {
     setMessage(null)
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setMessage(cameraError())
+      return
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      })
       streamRef.current = stream
       setCamera(true)
-      await new Promise((resolve) => window.requestAnimationFrame(resolve))
       const video = videoRef.current
       video.srcObject = stream
       await video.play()
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (context === null) throw new Error('Canvas is unavailable')
       const scan = () => {
         if (!streamRef.current || busy) return
         if (video.readyState >= 2) {
@@ -64,9 +91,9 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
         frameRef.current = window.requestAnimationFrame(scan)
       }
       frameRef.current = window.requestAnimationFrame(scan)
-    } catch {
+    } catch (error) {
       stop()
-      setMessage('Camera access did not start. Use the typed code below.')
+      setMessage(cameraError(error))
     }
   }
 
@@ -78,9 +105,17 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
   return (
     <section className="checkin-card" aria-labelledby="scan-title">
       <h2 className="section__title" id="scan-title">Scan a groupmate</h2>
+      <video
+        ref={videoRef}
+        className="scanner-video"
+        playsInline
+        muted
+        autoPlay
+        hidden={!camera}
+        aria-label="Camera preview for QR scanning"
+      />
       {camera ? (
         <>
-          <video ref={videoRef} className="scanner-video" playsInline muted aria-label="Camera preview for QR scanning" />
           <button type="button" className="btn btn--ghost" onClick={stop}>Stop camera</button>
         </>
       ) : (
@@ -89,11 +124,22 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
       <form className="typed-form" onSubmit={typed}>
         <label className="field">
           <span className="field__label">Or enter their code</span>
-          <input className="field__input" name="code" required autoComplete="off" />
+          <input
+            className="field__input"
+            name="code"
+            required
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck="false"
+            placeholder="Paste the full hc1… code"
+          />
         </label>
         <button type="submit" className="btn btn--ghost" disabled={busy}>Check in</button>
       </form>
       {message && <p className="inline-message" role="status">{message}</p>}
+      <p className="row__meta">
+        Two different joined members are required. Your own code cannot check you in.
+      </p>
     </section>
   )
 }

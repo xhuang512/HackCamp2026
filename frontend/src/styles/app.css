@@ -476,6 +476,10 @@
   color: var(--c-ink);
 }
 
+.copy-code {
+  margin-top: var(--s-4);
+}
+
 .scanner-video {
   width: 100%;
   min-height: 200px;
