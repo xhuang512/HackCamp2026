@@ -64,7 +64,7 @@ export default function useAsync(fn, deps = [], { pollMs = 0 } = {}) {
   useEffect(() => {
     if (!pollMs) return undefined
 
-    function tick() {
+    async function tick() {
       /* A hidden tab is a phone in a pocket. Nothing is read, so nothing is
          worth fetching or spending battery on. */
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
@@ -73,7 +73,7 @@ export default function useAsync(fn, deps = [], { pollMs = 0 } = {}) {
       const controller = new AbortController()
       polling.current = controller
 
-      fn({ signal: controller.signal })
+      await fn({ signal: controller.signal })
         .then((data) => {
           setResult((prev) => (prev.key === key ? { key, data, error: null, stale: false } : prev))
         })
@@ -92,10 +92,11 @@ export default function useAsync(fn, deps = [], { pollMs = 0 } = {}) {
     }
 
     let timeoutId
+    let live = true
     const schedule = () => {
-      timeoutId = setTimeout(() => {
-        tick()
-        schedule()
+      timeoutId = setTimeout(async () => {
+        await tick()
+        if (live) schedule()
       }, pollMs)
     }
     schedule()
@@ -107,6 +108,7 @@ export default function useAsync(fn, deps = [], { pollMs = 0 } = {}) {
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
+      live = false
       clearTimeout(timeoutId)
       document.removeEventListener('visibilitychange', onVisible)
       if (polling.current !== null) {

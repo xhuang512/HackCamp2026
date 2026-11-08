@@ -42,7 +42,6 @@ router = APIRouter(tags=["map"])
 @router.get(
     "/map",
     response_model=MapResponse,
-    response_model_exclude_none=True,
     summary="Building activity, plus the caller's group building if confirmed",
     description=(
         "`free_count` is how many students are in a live group at that "

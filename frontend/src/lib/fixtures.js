@@ -80,17 +80,17 @@ export function startedGroup({ building, mode }) {
 
 export const campusMap = {
   buildings: [
-    { slug: 'nest', name: 'The Nest', lat: 49.2665, lng: -123.2497, free_count: 12 },
-    { slug: 'ikb', name: 'Irving K Barber Learning Centre', lat: 49.26757, lng: -123.25272, free_count: 7, groups_meeting: 2 },
-    { slug: 'koerner', name: 'Koerner Library', lat: 49.26664, lng: -123.25515, free_count: 5, groups_meeting: 1 },
+    { slug: 'nest', name: 'The Nest', lat: 49.2665578, lng: -123.2498368, free_count: 12 },
+    { slug: 'ikb', name: 'Irving K Barber Learning Centre', lat: 49.2676194, lng: -123.252761, free_count: 7, groups_meeting: 2 },
+    { slug: 'koerner', name: 'Koerner Library', lat: 49.2665489, lng: -123.255078, free_count: 5, groups_meeting: 1 },
     { slug: 'life', name: 'Life Building', lat: 49.2674326, lng: -123.2500649, free_count: 3, groups_meeting: 1 },
   ],
   my_group: {
     group_id: 'g_41',
     slug: 'nest',
     name: 'The Nest',
-    lat: 49.2665,
-    lng: -123.2497,
+    lat: 49.2665578,
+    lng: -123.2498368,
     joined_count: 4,
     checked_in_count: 2,
   },
@@ -104,8 +104,8 @@ export const projector = {
   checked_in: 11,
   students: 26,
   dots: [
-    { slug: 'nest', name: 'The Nest', lat: 49.2665, lng: -123.2497, count: 12 },
-    { slug: 'koerner', name: 'Koerner Library', lat: 49.26664, lng: -123.25515, count: 5 },
+    { slug: 'nest', name: 'The Nest', lat: 49.2665578, lng: -123.2498368, count: 12 },
+    { slug: 'koerner', name: 'Koerner Library', lat: 49.2665489, lng: -123.255078, count: 5 },
   ],
 }
 

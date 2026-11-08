@@ -1444,8 +1444,8 @@
 /* Set on an L.divIcon, so this is the whole marker. 44px clears the touch
    floor; the pointer sits at iconAnchor so the tip marks the spot. */
 .pin {
-  width: 44px;
-  height: 44px;
+  width: var(--pin-size, 44px);
+  height: var(--pin-size, 44px);
   border-radius: var(--r-pill);
   border: 2px solid var(--c-pin-edge);
   display: flex;

@@ -394,6 +394,7 @@ class ApiContractTests(unittest.TestCase):
         self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
         self.database.tables["groups"][0]["status"] = "confirmed"
         self.database.tables["groups"][0]["end_time"] = "23:59:00"
+        self._membership("s_current")["invitation_status"] = "accepted"
         self.database.tables["students"].append(
             {"id": "s_third", "first_name": "Rosa", "paused": False, "deleted_at": None}
         )
@@ -401,7 +402,7 @@ class ApiContractTests(unittest.TestCase):
             {
                 "group_id": "g_41",
                 "student_id": "s_third",
-                "response": "joined",
+                "invitation_status": "accepted",
                 "arrived_at": None,
             }
         )

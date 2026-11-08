@@ -158,24 +158,27 @@ function MeMarker({ position }) {
 function PlacePin({ place, registry }) {
   const markerRef = useRef(null)
   const label = placeLabel(place)
+  const pinSize = place.mine
+    ? 44
+    : Math.round(36 + (8 * Math.sqrt(Math.max(place.groupsMeeting, 1))))
 
   const icon = useMemo(
     () =>
       L.divIcon({
         className: '',
         html:
-          `<span class="pin pin--${place.mine ? 'mine' : 'social'}">` +
+          `<span class="pin pin--${place.mine ? 'mine' : 'social'}" style="--pin-size:${pinSize}px">` +
           (place.mine
             ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-5.3-6.5-10a6.5 6.5 0 1 1 13 0c0 4.7-6.5 10-6.5 10z"/><circle cx="12" cy="11" r="2.4"/></svg>'
             : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8.5" r="2.8"/><path d="M3.5 19c.9-2.8 3-4.2 5.5-4.2s4.6 1.4 5.5 4.2"/><path d="M16 6.2a2.8 2.8 0 0 1 0 5.3M18 14.4c1.6.6 2.7 1.8 3.3 3.4"/></svg>') +
           `<span class="pin__count">${place.groupsMeeting || place.count}</span>` +
           '</span>',
-        iconSize: [44, 44],
+        iconSize: [pinSize, pinSize],
         /* Anchor at the bottom centre so the pin points at the building. */
-        iconAnchor: [22, 44],
-        popupAnchor: [0, -44],
+        iconAnchor: [pinSize / 2, pinSize],
+        popupAnchor: [0, -pinSize],
       }),
-    [place.mine, place.count, place.groupsMeeting],
+    [place.mine, place.count, place.groupsMeeting, pinSize],
   )
 
   useEffect(() => {
