@@ -18,6 +18,7 @@ from supabase import Client
 from app.constants import ACTIVE, CONFIRMED, FORMING
 from app.db import get_db_client
 from app.groups_view import checked_in_members, live_members, state_for
+from app.lifecycle_refresh import refresh_lifecycle
 from app.models import ProjectorDot, ProjectorState
 from app.repositories import RepositoryError
 from app.repositories.buildings import BuildingRepository
@@ -38,6 +39,7 @@ router = APIRouter(tags=["projector"])
 )
 def get_projector_state(
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> ProjectorState:
     groups = GroupRepository(client)
     members = GroupMemberRepository(client)

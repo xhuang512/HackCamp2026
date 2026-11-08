@@ -58,6 +58,17 @@ class GroupRepository:
             "read live groups",
         )
 
+    def list_lifecycle_candidates(self) -> list[dict[str, Any]]:
+        """Read every non-terminal group so overdue rows can catch up."""
+        return execute(
+            self.client.table("groups")
+            .select(COLUMNS)
+            .in_("status", list(LIVE_GROUP_STATES))
+            .order("on_date")
+            .order("start_time"),
+            "read lifecycle candidates",
+        )
+
     def get(self, group_id: str) -> dict[str, Any]:
         rows = execute(
             self.client.table("groups").select(COLUMNS).eq("id", group_id).limit(1),
@@ -106,15 +117,26 @@ class GroupRepository:
             raise RecordNotFoundError("Database did not return the created group")
         return rows[0]
 
-    def set_status(self, group_id: str, status: str) -> None:
-        now = datetime.now(APPLICATION_TIMEZONE).isoformat()
+    def set_status(
+        self,
+        group_id: str,
+        status: str,
+        *,
+        current_status: str | None = None,
+        at: datetime | None = None,
+    ) -> int:
+        now = (at or datetime.now(APPLICATION_TIMEZONE)).isoformat()
         payload: dict[str, Any] = {"status": status, "status_changed_at": now}
         if status == CONFIRMED:
             payload["confirmed_at"] = now
-        execute(
-            self.client.table("groups").update(payload).eq("id", group_id),
+        query = self.client.table("groups").update(payload).eq("id", group_id)
+        if current_status is not None:
+            query = query.eq("status", current_status)
+        rows = execute(
+            query,
             "update group status",
         )
+        return len(rows)
 
     def delete(self, group_id: str) -> None:
         execute(

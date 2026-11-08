@@ -15,6 +15,7 @@ from app import store
 from app.auth import onboarded_user
 from app.db import get_db_client
 from app.groups_view import DAY_NAMES, gap_of, group_out
+from app.lifecycle_refresh import refresh_lifecycle
 from app.models import GapOut, NowResponse
 from app.repositories import RecordNotFoundError, RepositoryError
 from app.repositories.free_blocks import FreeBlockRepository
@@ -47,6 +48,7 @@ class NoSuggestionError(Exception):
 def get_current_suggestion(
     student: Annotated[store.Student, Depends(onboarded_user)],
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> NowResponse:
     free_blocks = FreeBlockRepository(client)
     groups = GroupRepository(client)
