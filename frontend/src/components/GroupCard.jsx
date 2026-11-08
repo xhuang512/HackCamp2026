@@ -1,4 +1,5 @@
 import AvatarRow from './AvatarRow.jsx'
+import ModeBadge from './ModeBadge.jsx'
 import SharedTags from './SharedTags.jsx'
 import SpotRow from './SpotRow.jsx'
 
@@ -13,6 +14,7 @@ export default function GroupCard({ group, label, busy = false, onJoin, onSkip }
     <section className="card" aria-label="Your suggested group">
       <div className="card__top">
         <span className="card__label">{label}</span>
+        <ModeBadge mode={group.mode} />
         <span className="card__meta">{group.joined_count} joined</span>
       </div>
 

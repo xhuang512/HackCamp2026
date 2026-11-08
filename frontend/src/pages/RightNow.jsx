@@ -12,8 +12,12 @@ import CheckInCode from '../components/CheckInCode.jsx'
 import CheckInScanner from '../components/CheckInScanner.jsx'
 
 /* The screen the whole app is for: one gap, one group, join or skip.
-   Mode is local for now. Once the backend takes it, it becomes a parameter
-   on GET /me/now, which is a contract change worth raising first. */
+
+   The mode toggle picks the mode for a group the student starts. It does
+   not filter the suggestion: GET /me/now takes no mode parameter, so the
+   matcher's group arrives with a mode of its own. Anything describing that
+   group therefore reads group.mode, never this toggle. Making GET /me/now
+   take a mode is a contract change worth raising first. */
 
 export default function RightNow() {
   const [mode, setMode] = useState('social')
@@ -53,7 +57,10 @@ export default function RightNow() {
     }
   }
 
-  const label = mode === 'social' ? 'Your group for this gap' : 'Your quiet study group'
+  /* The suggested group's own mode, which is not necessarily the toggle's.
+     ModeBadge on the card spells the mode out, so the heading does not
+     repeat it. */
+  const label = data?.group?.my_state === 'invited' ? 'Suggested for this gap' : 'Your group for this gap'
 
   return (
     <>

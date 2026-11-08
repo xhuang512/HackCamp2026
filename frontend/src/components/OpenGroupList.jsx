@@ -1,3 +1,4 @@
+import ModeBadge from './ModeBadge.jsx'
 import SharedTags from './SharedTags.jsx'
 import { formatGap } from '../lib/format.js'
 
@@ -11,7 +12,9 @@ export default function OpenGroupList({ groups, busyId, onJoin }) {
         {groups.map((group) => (
           <li className="open-group" key={group.id}>
             <div className="row__text">
-              <span className="row__name">{group.area}</span>
+              <span className="row__name">
+                {group.area} <ModeBadge mode={group.mode} />
+              </span>
               <span className="row__meta">
                 {formatGap(group.gap)} · {group.seats_left} {group.seats_left === 1 ? 'seat' : 'seats'} left
               </span>

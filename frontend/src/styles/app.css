@@ -204,6 +204,9 @@
 }
 
 .card__meta {
+  /* Pushes itself to the right edge, so the label and the mode badge stay
+     together on the left however many of them there are. */
+  margin-left: auto;
   font-size: var(--t-13);
   color: var(--c-ink-3);
 }
@@ -276,6 +279,26 @@
   background: var(--c-accent-wash);
   font-size: var(--t-13);
   font-weight: var(--w-medium);
+}
+
+/* ---------- Group mode badge ---------- */
+
+.mode-badge {
+  padding: 4px var(--s-4);
+  border-radius: var(--r-pill);
+  font-size: var(--t-12);
+  font-weight: var(--w-semibold);
+  white-space: nowrap;
+}
+
+.mode-badge--social {
+  background: var(--c-mode-social-bg);
+  color: var(--c-mode-social-fg);
+}
+
+.mode-badge--study {
+  background: var(--c-mode-study-bg);
+  color: var(--c-mode-study-fg);
 }
 
 /* ---------- Meeting spot ---------- */
@@ -381,6 +404,9 @@
 }
 
 .row__name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
   font-size: var(--t-15);
   font-weight: var(--w-semibold);
 }

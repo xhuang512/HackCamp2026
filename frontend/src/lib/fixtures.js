@@ -16,7 +16,12 @@ export const meNow = {
     mode: 'social',
     members: ['You', 'Ji-woo', 'Amir'],
     shared: ['STAT 302', '2 transfers', 'Speaks Korean'],
-    spot: { building: 'The Nest', walk_min: 4 },
+    /* No spot while my_state is 'invited'. The backend will not send one:
+       spot_is_visible_to() in app/groups_view.py needs the caller to have
+       joined, not merely to have been invited. A fixture that showed the
+       building here would teach the opposite of the rule the server
+       enforces, and screens built against it would break on real data. */
+    spot: null,
     joined_count: 3,
     checked_in_count: 0,
     seats_left: 2,

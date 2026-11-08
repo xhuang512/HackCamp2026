@@ -104,6 +104,15 @@
   --c-av-3-bg: var(--sky-tint);
   --c-av-3-fg: var(--c-accent-dark);
 
+  /* Group mode, social or study. These reuse the avatar 1 and avatar 3
+     pairs rather than introducing colours, so they are already contrast
+     checked in both modes. The badge always spells its mode out, so colour
+     is never the only thing carrying it. */
+  --c-mode-social-bg: var(--c-av-1-bg);
+  --c-mode-social-fg: var(--c-av-1-fg);
+  --c-mode-study-bg: var(--c-av-3-bg);
+  --c-mode-study-fg: var(--c-av-3-fg);
+
   /* The stage projector is always dark, whatever the viewer's system theme,
      so these are pinned rather than mode-dependent. */
   --c-stage-bg: #00162e;
