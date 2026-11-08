@@ -2,6 +2,7 @@ import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { useAuth } from '../lib/authContext.js'
 import Icon from '../components/Icon.jsx'
+import campusLandscape from '../assets/campus-landscape.svg'
 
 /* One line about the app and one primary button.
    There is nothing else to decide here, so there is nothing else on screen.
@@ -29,6 +30,10 @@ export default function Welcome() {
     <div className="welcome">
       <div className="welcome__top">
         <span className="welcome__name">Hangout</span>
+        {/* Decorative, so alt is empty: the headline underneath already says
+            what the screen is. A described illustration would make a screen
+            reader announce scenery before the one thing to do here. */}
+        <img className="welcome__art" src={campusLandscape} alt="" />
         <h1 className="welcome__pitch">
           Find someone to hang out with in your next gap between classes.
         </h1>
