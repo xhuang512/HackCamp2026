@@ -39,7 +39,7 @@ class StudentCreate(BaseModel):
         }
     )
 
-    first_name: str = Field(min_length=1, max_length=80, description="Student's first name")
+    first_name: str = Field(min_length=1, max_length=40, description="Student's first name")
     tags: list[str] = Field(
         default_factory=list,
         description="Canonical student-type tag slugs returned by GET /options",
@@ -104,6 +104,20 @@ class CurrentSuggestionResponse(BaseModel):
 
     gap: Gap
     group: SuggestedGroup
+
+
+class WaitingForMatchResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"status": "waiting"}}
+    )
+
+    status: Literal["waiting"] = Field(
+        description="The student is eligible but has no current group suggestion"
+    )
+
+
+class NoSuggestionError(Exception):
+    """Raised when an authenticated student has no current suggestion."""
 
 
 @router.post(
@@ -186,17 +200,18 @@ def create_student(
 
 @router.get(
     "/me/now",
-    response_model=CurrentSuggestionResponse,
+    response_model=CurrentSuggestionResponse | WaitingForMatchResponse,
     summary="Get the current group suggestion",
     description=(
-        "Returns the authenticated student's next persisted group membership whose "
-        "time fits one of their free blocks."
+        "Returns the authenticated student's next persisted group suggestion. "
+        "The gap interval is the group's actual meeting interval. If no suggestion "
+        "exists, returns HTTP 200 with `{\"status\": \"waiting\"}`."
     ),
 )
 def get_current_suggestion(
     student_id: Annotated[str, Depends(get_current_student_id)],
     client: Annotated[Client, Depends(get_db_client)],
-) -> CurrentSuggestionResponse:
+) -> CurrentSuggestionResponse | WaitingForMatchResponse:
     students = StudentRepository(client)
     free_blocks = FreeBlockRepository(client)
     groups = GroupRepository(client)
@@ -212,7 +227,7 @@ def get_current_suggestion(
             str(membership["group_id"]): membership for membership in memberships
         }
         upcoming = groups.list_upcoming(list(membership_by_group))
-        group, block = _first_group_with_availability(
+        group = _first_group_with_availability(
             upcoming,
             free_blocks.list_for_student(student_id),
         )
@@ -236,6 +251,8 @@ def get_current_suggestion(
             if everyone_joined
             else "To be announced"
         )
+    except NoSuggestionError:
+        return WaitingForMatchResponse(status="waiting")
     except RecordNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RepositoryError as exc:
@@ -246,9 +263,9 @@ def get_current_suggestion(
 
     return CurrentSuggestionResponse(
         gap=Gap(
-            day=_day_name(int(block["day"])),
-            start=_short_time(str(block["start_time"])),
-            end=_short_time(str(block["end_time"])),
+            day=_day_name(date.fromisoformat(str(group["on_date"])).weekday()),
+            start=_short_time(str(group["start_time"])),
+            end=_short_time(str(group["end_time"])),
         ),
         group=SuggestedGroup(
             id=group_id,
@@ -277,7 +294,7 @@ def _rollback_student(
 def _first_group_with_availability(
     groups: list[dict[str, Any]],
     blocks: list[dict[str, Any]],
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> dict[str, Any]:
     for group in groups:
         group_date = date.fromisoformat(str(group["on_date"]))
         group_start = _short_time(str(group["start_time"]))
@@ -288,8 +305,8 @@ def _first_group_with_availability(
                 and _short_time(str(block["start_time"])) <= group_start
                 and _short_time(str(block["end_time"])) >= group_end
             ):
-                return group, block
-    raise RecordNotFoundError("No upcoming group matches the student's availability")
+                return group
+    raise NoSuggestionError
 
 
 def _short_time(value: str) -> str:

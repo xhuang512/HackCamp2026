@@ -79,14 +79,29 @@ From the project root:
 cp .env.example .env
 ```
 
-Fill in the following values when Supabase integration is ready:
+Fill in the backend values and list every frontend origin that may call FastAPI:
 
 ```dotenv
 SUPABASE_URL=your-supabase-project-url
-SUPABASE_KEY=your-supabase-key
+SUPABASE_SERVICE_KEY=your-backend-only-service-role-key
+GUEST_SESSION_SECRET=at-least-32-bytes
+CURRENT_TERM=2026W1
+DEMO_MODE=false
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
-The current health-check endpoint does not require Supabase credentials.
+`CORS_ORIGINS` is a comma-separated list of exact origins. For LAN phone testing,
+add the frontend development server's LAN origin, such as
+`http://192.168.1.20:5173`. For deployment, add the exact HTTPS frontend origin.
+Do not use `*`; the API accepts bearer credentials and deliberately rejects an
+unrestricted wildcard origin.
+
+The health-check endpoint does not require Supabase credentials. Other data
+endpoints require `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
+
+The frontend's `VITE_API_URL` is public configuration and should be set in
+`frontend/.env.local` for local development or in the frontend hosting provider.
+Never expose `SUPABASE_SERVICE_KEY` through a `VITE_*` variable.
 
 **Important:** Do not commit `.env` or any secrets to GitHub.
 
@@ -141,9 +156,56 @@ npm run preview   # Preview the production build
 
 ## Database Setup
 
-Supabase will be used for persistent data storage.
+Apply `backend/sql/001_core_schema.sql` to the Supabase project, then seed the
+controlled onboarding catalogs:
 
-Database tables and connection setup are not yet finalized. Instructions will be added once the schema is ready.
+```bash
+cd backend
+.venv/bin/python seed.py
+```
+
+The backend uses the service-role key for privileged database access. Browser
+clients call FastAPI and do not receive that key.
+
+## Frontend API integration contract
+
+`POST /students` accepts a first name of at most 40 characters and returns a
+signed guest `session_token`. Send that token to authenticated endpoints as:
+
+```http
+Authorization: Bearer <session_token>
+```
+
+`GET /me/now` has two successful HTTP 200 response variants.
+
+When a suggestion exists, the established shape is unchanged. The `gap` fields
+now contain the persisted group's actual meeting date and interval:
+
+```json
+{
+  "gap": {"day": "tue", "start": "13:15", "end": "14:30"},
+  "group": {
+    "id": "group-id",
+    "members": [],
+    "shared": ["STAT 302"],
+    "spot": {"building": "To be announced", "walk_min": 0},
+    "response": "pending"
+  }
+}
+```
+
+When the authenticated student has no current suggestion, the response is:
+
+```json
+{"status": "waiting"}
+```
+
+The frontend should treat this as a normal waiting state, not an error. Missing
+or invalid authentication remains HTTP 401. Database and Supabase failures remain
+HTTP 502 or 503. Validation failures remain HTTP 422.
+
+Names remain hidden until the requesting student joins, and the real meeting
+building remains hidden until every group membership has joined.
 
 ## Development Notes
 
@@ -152,7 +214,8 @@ Database tables and connection setup are not yet finalized. Instructions will be
 - Install frontend dependencies using `npm ci`.
 - Keep `.env` files, `.venv/`, and `node_modules/` out of Git.
 - Commit `requirements.txt`, `package.json`, and `package-lock.json` to ensure teammates can install the required dependencies.
-- The current repository provides the basic project structure. Authentication, matching logic, database integration, and application pages will be implemented separately.
+- Authentication, matching, and Supabase persistence are implemented in the
+  backend. The frontend application pages and API integration are still pending.
 
 
 # UBC Study & Social Meetups
@@ -192,4 +255,3 @@ The demo can use one building and sample timetables. The campus map and timetabl
 ## Future direction
 
 Extend Open Tables to public libraries, community centres, and other public venues in nearby municipalities. Commuter students could select areas that work for them and add evening or weekend availability. For example, a student who leaves campus after class could find a STAT 302 study group at a library in Richmond without sharing their home address.
-

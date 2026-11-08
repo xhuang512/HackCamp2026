@@ -80,12 +80,29 @@ class ApiContractTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_create_student_rejects_name_longer_than_database_limit(self) -> None:
+        original_count = len(self.database.tables["students"])
+
+        response = self.client.post(
+            "/students",
+            json={
+                "first_name": "M" * 41,
+                "preset_schedule": "tue_thu_afternoon",
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(len(self.database.tables["students"]), original_count)
+
     def test_now_returns_gap_and_pending_group(self) -> None:
         response = self.client.get("/me/now", headers=self.auth_headers)
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["gap"], {"day": "tue", "start": "13:00", "end": "15:00"})
+        self.assertEqual(
+            body["gap"],
+            {"day": "tue", "start": "13:15", "end": "14:30"},
+        )
         self.assertEqual(body["group"]["id"], "g_41")
         self.assertEqual(body["group"]["response"], "pending")
         self.assertEqual(body["group"]["members"], [])
