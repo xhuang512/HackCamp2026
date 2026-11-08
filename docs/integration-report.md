@@ -108,11 +108,17 @@ Codes are free text, normalised by `normalize_course_code()` to
 created on demand, so no catalog is needed and `GET /options` deliberately
 does not offer one.
 
-One deployment catch: `POST /students` returns **422** if `courses` is
-non-empty while the backend's `CURRENT_TERM` environment variable is unset
+One deployment catch: `POST /students` fails the whole request if `courses`
+is non-empty while the backend's `CURRENT_TERM` environment variable is unset
 (`app/routers/identity.py:372`). Sending courses makes a previously working
 signup fail on any backend missing that variable. `.env.example` lists
 `CURRENT_TERM` but leaves it blank.
+
+> **Correction.** Phase 1 of this report said that failure was a **422**. It
+> is a **503**, deliberately, because an unset environment variable is the
+> server's fault and not the caller's. A real request in phase 4 is what
+> caught it; the recovery path in `Onboarding.jsx` had been written against
+> 422 and would never have fired. It now keys off the message instead.
 
 ### 3.3 `PATCH /me` accepts seven fields and the Me screen sends two
 
@@ -294,7 +300,150 @@ Ordered by what it costs the demo. I have changed none of this.
 7. **Decide on `OpenGroupOut.area`** (5.1), which is the exact building name
    rather than a general area.
 
+## Phase 2, broken calls
+
+Nothing to do. Section 1 found none, and nothing changed that conclusion.
+
+## Phase 3, what was built
+
+Five of the six proposed items, each on its own commit. Item 6 was skipped
+on purpose; see below.
+
+| # | Item | Commit |
+| --- | --- | --- |
+| 1 | `mode` on the group card and open list, card label from `group.mode` | `6a337c2` |
+| 2 | Projector and map refresh on a timer | `6338073` |
+| 3 | `GET /auth/config`, and the demo reset button it gates | `e9c509d` |
+| 4 | `courses` collected in onboarding and sent | `233082f` |
+| 5 | Name and tags editable from the Me screen | `2efe08a` |
+
+Three things worth knowing about how they were built:
+
+- **The card label was wrong, not just missing.** Right Now derived its
+  heading from its own mode toggle rather than `group.mode`, so a suggested
+  study group was labelled a social one. The toggle only ever chose the mode
+  for a group the student starts, which is what it still does.
+- **Polling does not go through `reload()`.** Bumping the key would make
+  `loading` true on every tick and flash the loading state at a room. A poll
+  writes under the key already current. A failed poll keeps the last good
+  numbers and says `stale` rather than blanking the stage.
+- **Courses went on the existing step 3**, not a new step. That step already
+  asks "anything we should match you on?", and AGENTS.md pins a guest at
+  three screens to get a stage audience from the join QR to a group card
+  inside 30 seconds.
+
+### Item 6 was skipped
+
+Favourite spots. `PATCH /me` accepts the field and it cannot persist, because
+`student_spots` is not in `sql/schema.sql` and both repository methods
+swallow the missing-table error. An editor would appear to work and forget on
+restart. See 4.2 and the backend list below.
+
+### One backend change, and why
+
+`app/groups_view.py` and `app/routers/map.py` were changed during the
+preceding lifecycle merge, not during this integration: the meeting spot was
+visible to a caller who had only been invited, and `GET /map` leaked the same
+thing with coordinates attached. Those are privacy-rule fixes, which
+AGENTS.md says to make in the backend. No backend code was changed for this
+integration pass.
+
+## Phase 4, verification
+
+Both servers were run and every endpoint touched was called for real.
+
+### Against the running backend
+
+The backend ran on port 8000 with `DEMO_MODE` and `CURRENT_TERM` set. There
+are no Supabase credentials in this checkout, so the database-backed routes
+were exercised in process against the test suite's fake instead, which is the
+same fake the 100 backend tests use.
+
+| Call | Result |
+| --- | --- |
+| `GET /health` | 200 `{"status":"ok"}` |
+| `GET /auth/config` | 200, `demo_mode` tracking the environment variable both ways |
+| `POST /students` with `courses: ["stat 406","cpsc121"]` | 201. Catalog gained `STAT 406` and `CPSC 121`, both linked to the new student. Normalisation confirmed end to end. |
+| `POST /students` with courses, `CURRENT_TERM` unset | **503**, not the 422 this report first claimed |
+| `POST /students` with `courses: []` | 201, which is the "Finish without courses" path |
+| `GET /me`, `GET /me/now`, `GET /groups/open`, `GET /map`, `GET /options` | 200, shapes as documented |
+| `PATCH /me` with `first_name` and `tags` | 200, both changed |
+| `POST /admin/reset` | 200, 8 buildings, 60 students, 29 groups |
+
+### In a real browser
+
+| Checked | Result |
+| --- | --- |
+| Mode badge on the group card | Renders, reads clearly in dark mode |
+| Empty-spot sentence for a confirmed group the reader has not joined | "This group is confirmed. Join it to see where everyone is meeting." |
+| Polling fires | 3 requests to `/api/projector` in 16s, at 866ms, 5900ms, 10827ms. Exactly 5s apart. |
+| Polling does not flash loading | 53 samples over 13s, 2+ poll cycles. The loading text never reappeared and the number stayed on screen throughout. |
+| Reset button with `DEMO_MODE=true` | Present |
+| Reset button with `DEMO_MODE=false` | Absent |
+| Guest button with backend `DEMO_MODE=false` | Disabled, with "Guest sign-in is off on the server. Set DEMO_MODE=true in the backend's .env and restart it." |
+| Course input, invalid code | `"not a course" is not a course code. They look like STAT 302.` Text kept, not cleared. |
+| Course input, `stat-302` | Normalised to a `STAT 302` chip; Finish enabled with no tags ticked |
+| Draft persistence | `courses: ["STAT 302"]` saved at draft version 1, no bump needed |
+| Me editor | Opens seeded, saves, identity line updates to "Guest · Transfer student · Commuter" |
+| Map screen | Tiles, "Your group is at The Nest", "2 of 4 checked in", accessible sheet |
+
+The reset button was deliberately **not clicked** in the browser: it opens a
+`window.confirm`, which blocks the automation. The endpoint itself was called
+directly and returned 200.
+
+### Automated
+
+| Suite | Result |
+| --- | --- |
+| Backend | 100 passed, 6 skipped (the optional live Supabase tests) |
+| Frontend lint | clean |
+| Frontend build | clean, Leaflet still split at 157.65 kB |
+| `npm run check:signup` | 17 of 17 route-gate checks |
+| SSR of `/`, `/map`, `/me`, `/projector` | all render, no Leaflet in output |
+
+### Not verified
+
+Everything above runs against the fake database or fixtures. **None of it is
+evidence that check-in or the map works against the shared Supabase project**,
+which still needs the disposable-database pass in `docs/HANDOFF.md` section 10.
+Two phones checking each other in has not been done.
+
+## For the backend owner
+
+Unchanged from phase 1 except where noted. None of this was altered.
+
+1. **Nothing calls the lifecycle functions** (4.1). `expire_invitations()` and
+   `advance_group_for_time()` are written and tested but unreachable, so
+   invitations never expire and no group ever becomes `active` or
+   `completed`. `GroupRepository.set_status()` is dead code.
+2. **`student_spots` is missing from `sql/schema.sql`** (4.2). This blocks
+   item 6. The definition is recoverable at commit `97e4679^`.
+3. **`CURRENT_TERM` has no default** (3.2). With it unset, any
+   `POST /students` carrying courses is a **503**. The frontend now offers to
+   retry without them, but that is a workaround for a variable only you can
+   set.
+4. **Matching ignores all signals** (4.3). Tier 1 asks for newcomer priority
+   and `shared_with(a, b)`; groups are time-overlap only. Note this also
+   means the courses the frontend now sends change what a card *says*, not
+   who is on it.
+5. **`StudentOut` omits `languages` and `ask_me_about`** (3.3) although
+   `PATCH /me` accepts both, so they cannot be shown in an editor. This is
+   why the Me screen edits name and tags only.
+6. **`PLACEHOLDER_WALK_MIN`** (4.4) makes every walk five minutes.
+7. **Decide on `OpenGroupOut.area`** (5.1). I left it alone rather than
+   coarsening it: there is no area or zone column on `buildings`, only
+   `slug`, `name`, `lat`, `lng` and `is_indoor`, so producing a "general
+   area" would mean inventing a campus-zone mapping that nothing in the
+   repository can verify. That is a decision about product wording and data,
+   not a refactor.
+8. **`GET /auth/config` reports `guest_token_secret_set: false` when the
+   secret is set under the compatibility name** `GUEST_SESSION_SECRET`. It
+   only checks `GUEST_TOKEN_SECRET`. Harmless, but the diagnostic says
+   "unset" about a server that is signing tokens fine, which is exactly the
+   wrong direction for a setup aid.
+
 ## Status
 
-Phase 1 complete. Nothing has been changed outside this file. Waiting for
-approval of all or part of section 6 before touching any code.
+Phases 1 to 4 complete. Nothing is pushed; everything is local on
+`feat/integrate`. The `last-integration` tag now marks this pass, so the next
+run can diff the backend from here.

@@ -122,7 +122,12 @@ export default function Onboarding({ onDone }) {
            drop the courses and keep every other answer. Offered, not done
            silently: dropping what they typed without saying so is worse
            than the error. */
-        if (cause?.status === 422 && /CURRENT_TERM/i.test(cause?.message ?? '')) {
+        /* Keyed on the message rather than the status. The backend answers
+           503 here, not 422, because an unset environment variable is the
+           server's fault and not the caller's, and that is easy to assume
+           wrongly: this check was written against 422 and silently never
+           fired until a real request proved otherwise. */
+        if (/CURRENT_TERM/i.test(cause?.message ?? '')) {
           setTermBlocked(true)
           setSubmitError(
             'The server cannot store courses yet, because its CURRENT_TERM is not set. Finish without them, or set it on the backend and try again.',

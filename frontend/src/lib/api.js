@@ -153,8 +153,10 @@ export async function getMe({ signal } = {}) {
     overlapping free time alone.
 
     One backend requirement to know about: a non-empty `courses` with the
-    server's CURRENT_TERM unset is a 422 for the whole request. Onboarding
-    offers to retry without them rather than leaving someone stuck.
+    server's CURRENT_TERM unset fails the whole request with 503, not 422,
+    because an unset variable is the server's fault rather than the caller's.
+    Onboarding offers to retry without them rather than leaving someone
+    stuck behind a variable only the backend owner can set.
 
     Returns { student, aha, guest_token }. A guest_token comes back only when
     `guest` is true and the backend's DEMO_MODE is on; it is stored here so the
