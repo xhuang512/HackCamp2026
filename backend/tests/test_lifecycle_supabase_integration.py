@@ -217,7 +217,7 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
 
     def test_concurrent_pair_checkins_are_atomic_and_idempotent(self) -> None:
         student_ids = [
-            self._create_student(f"Concurrent Checkin {index}") for index in range(3)
+            self._create_student(f"CC{index}") for index in range(3)
         ]
         group_id = self._create_checkin_group(student_ids)
         checked_at = datetime.now(APPLICATION_TIMEZONE).isoformat()
