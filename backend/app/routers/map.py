@@ -13,7 +13,7 @@ and building rows, and the phone never tells it where it is. The map page's
 own position stays on the device. docs/MAP.md has the rest of that boundary.
 """
 
-from datetime import date
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -26,14 +26,15 @@ from app.db import get_db_client
 from app.groups_view import (
     checked_in_members,
     joined_members,
-    live_members,
     spot_is_visible_to,
+    state_for,
 )
 from app.models import BuildingActivity, MapResponse, MyGroupPin
 from app.repositories import RepositoryError
 from app.repositories.buildings import BuildingRepository
 from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
+from app.timezones import APPLICATION_TIMEZONE
 
 router = APIRouter(tags=["map"])
 
@@ -60,7 +61,7 @@ def get_map(
         buildings = {
             int(row["id"]): row for row in BuildingRepository(client).list_all()
         }
-        today = date.today()
+        today = datetime.now(APPLICATION_TIMEZONE).date()
         live = [
             group
             for group in groups.list_from(today)
@@ -87,8 +88,13 @@ def get_map(
         if building_id is None or int(building_id) not in buildings:
             continue
         group_members = by_group.get(str(group["id"]), [])
+        group_state = state_for(group, group_members)
+        # The map represents real groups, not unaccepted proposals. Forming
+        # groups keep their exact meeting building private until confirmation.
+        if group_state not in {"confirmed", "active"}:
+            continue
         heads.setdefault(int(building_id), set()).update(
-            str(member["student_id"]) for member in live_members(group_members)
+            str(member["student_id"]) for member in joined_members(group_members)
         )
 
         if my_pin is not None:
@@ -108,6 +114,7 @@ def get_map(
             lng=float(building["lng"]),
             joined_count=len(joined_members(group_members)),
             checked_in_count=len(checked_in_members(group_members)),
+            state=group_state,
         )
 
     activity = [

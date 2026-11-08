@@ -255,7 +255,10 @@ class CreateGroupRequest(BaseModel):
 
 class CheckInCodeOut(BaseModel):
     code: str
-    expires_in: int = Field(ge=0, description="Seconds until the code rotates")
+    expires_in: int = Field(ge=1, description="Seconds until the code rotates")
+    joined_count: int = Field(ge=0)
+    checked_in_count: int = Field(ge=0)
+    my_state: Literal["joined", "checked_in"]
 
 
 class CheckInRequest(BaseModel):
@@ -265,7 +268,7 @@ class CheckInRequest(BaseModel):
 class CheckInResult(BaseModel):
     joined_count: int = Field(ge=0)
     checked_in_count: int = Field(ge=0)
-    my_state: MemberState
+    my_state: Literal["checked_in"]
     # False when the pair had already checked each other in. The scan
     # succeeded and changed nothing, which is what AGENTS.md asks for.
     counted: bool
@@ -296,6 +299,7 @@ class MyGroupPin(BaseModel):
     lng: float
     joined_count: int = Field(ge=0)
     checked_in_count: int = Field(ge=0)
+    state: Literal["confirmed", "active"]
 
 
 class MapResponse(BaseModel):

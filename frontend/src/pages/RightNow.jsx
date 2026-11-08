@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import * as api from '../lib/api.js'
 import useAsync from '../lib/useAsync.js'
 import { formatGap, formatDay } from '../lib/format.js'
@@ -25,6 +25,7 @@ export default function RightNow() {
   const [actionError, setActionError] = useState(null)
   const [start, setStart] = useState(null)
   const [starting, setStarting] = useState(false)
+  const [checkinGroupId, setCheckinGroupId] = useState(null)
   const { data, error, loading, reload } = useAsync(api.getMeNow)
   const open = useAsync(api.getOpenGroups)
   const catalog = useAsync(api.getOptions)
@@ -61,6 +62,9 @@ export default function RightNow() {
      ModeBadge on the card spells the mode out, so the heading does not
      repeat it. */
   const label = data?.group?.my_state === 'invited' ? 'Suggested for this gap' : 'Your group for this gap'
+  const setCheckinState = useCallback((groupId, available) => {
+    setCheckinGroupId(available ? groupId : null)
+  }, [])
 
   return (
     <>
@@ -115,8 +119,14 @@ export default function RightNow() {
 
       {data?.group && ['joined', 'checked_in'].includes(data.group.my_state) && (
         <div className="checkin-grid">
-          <CheckInCode groupId={data.group.id} />
-          <CheckInScanner groupId={data.group.id} onCheckedIn={reload} />
+          <CheckInCode
+            groupId={data.group.id}
+            meetingStart={data.gap?.start}
+            onAvailabilityChange={setCheckinState}
+          />
+          {checkinGroupId === data.group.id && (
+            <CheckInScanner groupId={data.group.id} onCheckedIn={reload} />
+          )}
         </div>
       )}
 

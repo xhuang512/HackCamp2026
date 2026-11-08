@@ -150,6 +150,7 @@ export default function MapPage() {
           )}
           {myGroup && (
             <p className="map-group-status" role="status">
+              {myGroup.state === 'active' ? 'Meeting now' : 'Confirmed'} ·{' '}
               {myGroup.checked_in_count} of {myGroup.joined_count} checked in at {myGroup.name}
               {/* The count is the thing being polled, so if a refresh fails
                   the number beside it has to stop claiming to be current. */}

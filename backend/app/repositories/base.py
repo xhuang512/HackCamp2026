@@ -17,6 +17,10 @@ class InvitationConflictError(RepositoryError):
     """Raised when an invitation response violates lifecycle rules."""
 
 
+class CheckInConflictError(RepositoryError):
+    """Raised when meetup attendance cannot be recorded safely."""
+
+
 def database_error_code(error: BaseException) -> str | None:
     """Return Postgres/PostgREST's code from a wrapped repository error.
 

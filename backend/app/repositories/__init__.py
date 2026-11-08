@@ -1,6 +1,7 @@
 """Reusable Supabase query layer for the Hangout API."""
 
 from app.repositories.base import (
+    CheckInConflictError,
     InvitationConflictError,
     RecordNotFoundError,
     ReferenceDataError,
@@ -8,6 +9,7 @@ from app.repositories.base import (
 )
 
 __all__ = [
+    "CheckInConflictError",
     "InvitationConflictError",
     "RecordNotFoundError",
     "ReferenceDataError",

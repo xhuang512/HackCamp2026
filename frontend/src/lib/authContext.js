@@ -35,9 +35,9 @@ export const AuthContext = createContext(null)
      'anon'     No session. Welcome.
      'authed'   We have a token. `sub` identifies the student.
 
-   `guestPending` is the gap in the guest flow: tapping "Continue as guest"
-   starts onboarding with no token at all, because the guest token only comes
-   back from POST /students at the end of it. */
+   `guestPending` remains for compatibility with an in-flight legacy guest
+   flow. New guests receive a short-lived onboarding token before the first
+   screen so authenticated schedule parsing works before their profile exists. */
 export const EMPTY = {
   status: 'anon',
   kind: null,

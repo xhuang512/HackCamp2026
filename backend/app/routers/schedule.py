@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from supabase import Client
 
+from app import auth, store
 from app.auth import get_current_student_id
 from app.db import get_db_client
 from app.schedule_ai import (
@@ -156,7 +157,7 @@ def get_configured_matching_window() -> MatchingWindow:
     ),
 )
 async def parse_schedule(
-    student_id: Annotated[str, Depends(get_current_student_id)],
+    caller: Annotated[auth.Caller, Depends(auth.current_user)],
     image: Annotated[
         UploadFile,
         File(description="PNG, JPEG, or WebP calendar screenshot; maximum 10 MB"),
@@ -171,8 +172,10 @@ async def parse_schedule(
     ],
 ) -> ScheduleParseResponse:
     # Authentication is intentionally resolved before any image is read. The
-    # opaque student id is not sent to an AI provider or written to logs.
-    del student_id
+    # caller identity is not sent to an AI provider or written to logs. A
+    # verified Auth0 caller may parse during onboarding, before a student row
+    # exists; saving still requires the completed profile.
+    del caller
     content = await image.read(MAX_IMAGE_BYTES + 1)
     if len(content) > MAX_IMAGE_BYTES:
         raise HTTPException(
@@ -261,6 +264,21 @@ def update_schedule(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Could not save the reviewed schedule",
         ) from exc
+
+    # Identity remains mirrored in the lightweight profile store on this
+    # integration branch. Keep its next-gap label in sync with the durable
+    # blocks the matcher now reads from Supabase.
+    store.update(
+        student_id,
+        free_blocks=[
+            (
+                block.day,
+                parse_wall_time(block.start_time),
+                parse_wall_time(block.end_time),
+            )
+            for block in ordered
+        ],
+    )
 
     for target_date in next_matching_dates({block.day for block in blocks}):
         try:

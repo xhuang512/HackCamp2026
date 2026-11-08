@@ -6,6 +6,7 @@ import { STUDENT_TAGS } from '../lib/presets.js'
 import ScreenHeader from '../components/ScreenHeader.jsx'
 import StateCard from '../components/StateCard.jsx'
 import Icon from '../components/Icon.jsx'
+import ScheduleEditor from '../components/ScheduleEditor.jsx'
 
 /* The mockup has no Me screen (its "Me" tab points at the onboarding
    artboard), so this is built from the privacy rules in AGENTS.md rather
@@ -28,6 +29,7 @@ export default function Me() {
   const [pausing, setPausing] = useState(false)
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [actionError, setActionError] = useState(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
 
   /* The canonical tag list, the same source onboarding reads. A second
      hardcoded list here is how the two drift until a saved tag stops
@@ -249,12 +251,24 @@ export default function Me() {
               </select>
             </label>
 
-            <div className="row">
+            <button
+              type="button"
+              className="row row--button"
+              aria-expanded={scheduleOpen}
+              aria-controls="schedule-editor"
+              onClick={() => setScheduleOpen((open) => !open)}
+            >
               <div className="row__text">
                 <span className="row__name">Your timetable</span>
-                <span className="row__meta">Private. Nobody else can see it.</span>
+                <span className="row__meta">Upload and review your availability.</span>
               </div>
-            </div>
+              <span className="row__action" aria-hidden="true">
+                {scheduleOpen ? 'Close' : 'Edit schedule'}
+                <span className="row__chevron">{scheduleOpen ? '−' : '›'}</span>
+              </span>
+            </button>
+
+            {scheduleOpen && <ScheduleEditor />}
 
             <p className="note note--sm">
               <Icon name="lock" size={20} />

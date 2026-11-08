@@ -48,6 +48,7 @@ const App = (await vite.ssrLoadModule('/src/App.jsx')).default
 const Onboarding = (await vite.ssrLoadModule('/src/pages/Onboarding.jsx')).default
 const Aha = (await vite.ssrLoadModule('/src/pages/Aha.jsx')).default
 const { studentCreated } = await vite.ssrLoadModule('/src/lib/fixtures.js')
+const { toStudentBody } = await vite.ssrLoadModule('/src/lib/draft.js')
 
 const h = React.createElement
 const render = (route, node) =>
@@ -107,6 +108,27 @@ has(aha, 'You are in, Sothea', 'the aha screen greets them')
 has(aha, String(created.aha.free_count), 'the aha number is the one from the response')
 has(aha, 'Tuesday', 'the gap is named')
 hasNot(aha, '>0<', 'no zero on the aha screen')
+
+// 7. Gemini's review shape is translated to POST /students' established
+// start/end shape. Without this, FastAPI reports both fields as required at
+// the last onboarding step even though the user reviewed their schedule.
+const uploaded = toStudentBody({
+  first_name: 'Sothea',
+  preset_id: null,
+  free_blocks: [{ day: 1, start_time: '13:00', end_time: '15:00' }],
+  tags: ['transfer'],
+  courses: ['STAT 406'],
+  languages: [],
+  ask_me_about: '',
+  visibility: 'everyone',
+}, { guest: true })
+say(
+  uploaded.free_blocks[0].start === '13:00'
+    && uploaded.free_blocks[0].end === '15:00'
+    && !('start_time' in uploaded.free_blocks[0])
+    && !('end_time' in uploaded.free_blocks[0]),
+  'uploaded schedule matches POST /students',
+)
 
 await vite.close()
 

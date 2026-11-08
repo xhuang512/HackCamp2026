@@ -56,6 +56,7 @@ export function AuthProvider({ children }) {
 function GuestOnlyProvider({ children }) {
   const [token, setToken] = useState(() => api.getSession())
   const [guestPending, setGuestPending] = useState(false)
+  const [guestError, setGuestError] = useState(null)
 
   useEffect(() => {
     const expired = () => {
@@ -66,17 +67,28 @@ function GuestOnlyProvider({ children }) {
     return () => window.removeEventListener(api.SESSION_EXPIRED_EVENT, expired)
   }, [])
 
+  const loginAsGuest = useCallback(async () => {
+    setGuestError(null)
+    try {
+      await api.startGuestOnboarding()
+      setToken(api.getSession())
+    } catch (cause) {
+      setGuestError(cause?.message ?? 'Guest sign-in did not finish. Please try again.')
+    }
+  }, [])
+
   const value = useMemo(
     () => ({
       ...EMPTY,
       status: token === null ? 'anon' : 'authed',
       kind: token === null ? null : 'guest',
       sub: token === null ? null : 'guest',
+      error: guestError,
       guestPending,
       canLoginWithGoogle: false,
       guestAllowed: true,
       loginWithGoogle: () => {},
-      loginAsGuest: () => setGuestPending(true),
+      loginAsGuest,
       /* Called by the last onboarding step once POST /students hands back a
          guest token. api.js has already stored it; this picks it up. */
       adoptGuestToken: () => {
@@ -90,7 +102,7 @@ function GuestOnlyProvider({ children }) {
         setToken(null)
       },
     }),
-    [token, guestPending],
+    [token, guestPending, guestError, loginAsGuest],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -115,6 +127,7 @@ function Auth0Bridge({ children }) {
      on a screen whose every request 401s. */
   const [tokenDead, setTokenDead] = useState(false)
   const [guestToken, setGuestToken] = useState(() => api.getSession())
+  const [guestError, setGuestError] = useState(null)
 
   useEffect(() => {
     const expired = () => {
@@ -150,6 +163,16 @@ function Auth0Bridge({ children }) {
     }
   }, [auth0Logout, isAuthenticated])
 
+  const loginAsGuest = useCallback(async () => {
+    setGuestError(null)
+    try {
+      await api.startGuestOnboarding()
+      setGuestToken(api.getSession())
+    } catch (cause) {
+      setGuestError(cause?.message ?? 'Guest sign-in did not finish. Please try again.')
+    }
+  }, [])
+
   const value = useMemo(() => {
     const live = isAuthenticated && !tokenDead
     const status = isLoading ? 'loading' : live || guestToken !== null ? 'authed' : 'anon'
@@ -158,13 +181,13 @@ function Auth0Bridge({ children }) {
       status,
       kind: live ? 'auth0' : guestToken === null ? null : 'guest',
       sub: live ? (user?.sub ?? null) : guestToken === null ? null : 'guest',
-      error: messageFor(error),
+      error: guestError ?? messageFor(error),
       guestPending,
       canLoginWithGoogle: true,
       guestAllowed,
       loginWithGoogle: () =>
         loginWithRedirect({ authorizationParams: { connection: 'google-oauth2' } }),
-      loginAsGuest: () => setGuestPending(true),
+      loginAsGuest,
       adoptGuestToken: () => {
         setGuestPending(false)
         setGuestToken(api.getSession())
@@ -179,7 +202,9 @@ function Auth0Bridge({ children }) {
     guestPending,
     user,
     error,
+    guestError,
     loginWithRedirect,
+    loginAsGuest,
     logout,
   ])
 

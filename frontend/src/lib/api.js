@@ -38,8 +38,9 @@ export class ApiError extends Error {
      Auth0 access token  Fetched per request by the provider that
                          src/lib/auth.jsx registers, because it expires and
                          only the SDK can refresh it.
-     Guest token         Issued by POST /students in demo mode and kept in
-                         localStorage. */
+     Guest token         A short-lived token starts demo onboarding;
+                         POST /students replaces it with a student-bound one.
+                         Both are kept in localStorage. */
 
 let tokenProvider = null
 
@@ -76,16 +77,17 @@ async function bearer() {
 
 async function request(path, { method = 'GET', body, signal } = {}) {
   const token = await bearer()
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData
   let res
   try {
     res = await fetch(`${BASE}${path}`, {
       method,
       signal,
       headers: {
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body === undefined || isForm ? {} : { 'Content-Type': 'application/json' }),
         ...(token === null ? {} : { Authorization: `Bearer ${token}` }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: isForm ? body : JSON.stringify(body) }),
     })
   } catch (cause) {
     if (cause?.name === 'AbortError') throw cause
@@ -115,6 +117,9 @@ async function messageFor(res, method, path) {
   try {
     const body = await res.json()
     if (typeof body?.detail === 'string') return body.detail
+    if (Array.isArray(body?.detail) && typeof body.detail[0]?.msg === 'string') {
+      return body.detail[0].msg.replace(/^Value error, /, '')
+    }
   } catch {
     /* Not JSON, or an empty body. Fall through to the generic line. */
   }
@@ -291,7 +296,15 @@ export async function skipGroup(groupId) {
     Returns { code, expires_in }. The code rotates every 30 seconds, so the
     screen showing it re-asks when expires_in runs out. */
 export async function getCheckinCode(groupId, { signal } = {}) {
-  if (USE_FIXTURES) return { code: 'hc1.fixture.0.fixture', expires_in: 30 }
+  if (USE_FIXTURES) {
+    return {
+      code: 'hc1.fixture.0.fixture',
+      expires_in: 30,
+      joined_count: 4,
+      checked_in_count: 2,
+      my_state: 'joined',
+    }
+  }
   return request(`/groups/${encodeURIComponent(groupId)}/checkin-code`, { signal })
 }
 
@@ -309,6 +322,44 @@ export async function postCheckin(groupId, code) {
   })
 }
 
+/* ---------- Schedule ---------- */
+
+/** POST /schedule/parse — extract visible events and suggested free blocks.
+
+    This uploads the image directly to the backend as multipart data. The
+    backend sends it to Gemini, returns suggestions, and persists nothing. */
+export async function parseSchedule(image, { signal } = {}) {
+  if (USE_FIXTURES) {
+    return {
+      timed_events: [],
+      all_day_events: [],
+      warnings: ['Fixture mode does not inspect the selected image.'],
+      suggested_free_blocks: [
+        { day: 1, start_time: '13:00', end_time: '15:00' },
+      ],
+      matching_window: {
+        timezone: 'America/Vancouver',
+        days: [0, 1, 2, 3, 4],
+        start_time: '09:00',
+        end_time: '18:00',
+      },
+      availability_status: 'suggested_not_confirmed',
+    }
+  }
+  const form = new FormData()
+  form.append('image', image)
+  return request('/schedule/parse', { method: 'POST', body: form, signal })
+}
+
+/** PUT /me/schedule — replace the caller's schedule with reviewed blocks. */
+export async function updateSchedule(freeBlocks) {
+  if (USE_FIXTURES) return { status: 'saved', free_blocks: freeBlocks }
+  return request('/me/schedule', {
+    method: 'PUT',
+    body: { free_blocks: freeBlocks },
+  })
+}
+
 /* ---------- Map and projector ---------- */
 
 /** GET /map — building activity, plus the caller's group building once the
@@ -316,7 +367,7 @@ export async function postCheckin(groupId, code) {
 
       { buildings: [{ slug, name, lat, lng, free_count }],
         my_group: { group_id, slug, name, lat, lng, joined_count,
-                    checked_in_count } | null }
+                    checked_in_count, state } | null }
 
     Takes no position argument, and must not grow one. There is deliberately
     no parameter through which the student's coordinates could reach the
@@ -361,6 +412,21 @@ export async function adminReset() {
     Callers handle the failure instead. */
 export async function getAuthConfig({ signal } = {}) {
   return request('/auth/config', { signal })
+}
+
+/** POST /auth/guest-session — authenticate a demo guest before onboarding.
+
+    The short-lived token lets the first schedule screen call Gemini without
+    making parsing public. POST /students replaces it with a student token. */
+export async function startGuestOnboarding() {
+  if (USE_FIXTURES) {
+    const out = { guest_token: 'fixture-onboarding-token' }
+    setSession(out.guest_token)
+    return out
+  }
+  const out = await request('/auth/guest-session', { method: 'POST' })
+  setSession(out.guest_token)
+  return out
 }
 
 /** GET /health — the one endpoint that existed first. */

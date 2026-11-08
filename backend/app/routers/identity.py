@@ -57,6 +57,17 @@ def _student_out(student: store.Student) -> StudentOut:
     )
 
 
+@router.post("/auth/guest-session")
+def create_guest_onboarding_session() -> dict[str, str]:
+    """Authenticate a demo guest before onboarding creates their profile."""
+    if not config.DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guest sign-up is only available in demo mode.",
+        )
+    return {"guest_token": auth.issue_guest_onboarding_token()}
+
+
 def _mirror(
     client: Client,
     student: store.Student,
@@ -120,8 +131,8 @@ def get_me(caller: Annotated[auth.Caller, Depends(auth.current_user)]) -> MeResp
 @router.post("/students", response_model=CreateStudentResponse, status_code=201)
 def create_student(
     body: CreateStudentRequest,
-    # Deliberately the optional dependency, because a demo guest has no token
-    # yet: the guest token is signed over the student row this call creates.
+    # Deliberately optional for older demo clients that create a guest in one
+    # request. Current clients send a short-lived onboarding guest token.
     caller: Annotated[auth.Caller | None, Depends(auth.current_caller)],
     client: Annotated[Client, Depends(get_db_client)],
 ) -> CreateStudentResponse:
@@ -155,14 +166,14 @@ def create_student(
     existing = None if caller is None else store.get_by_sub(caller.auth_sub)
     student_id = _persist_matchable(client, body, free_blocks, existing)
 
+    pending_guest = caller is not None and caller.is_guest and caller.student is None
     student = store.put(
         store.Student(
             id=student_id,
             first_name=body.first_name,
-            # Always from the verified token. A guest has no token yet, so
-            # their identity is minted here and handed back as guest_token
-            # below.
-            auth_sub=None if caller is None else caller.auth_sub,
+            # A pending demo identity is replaced below by a token bound to
+            # this newly created student row.
+            auth_sub=None if caller is None or pending_guest else caller.auth_sub,
             is_guest=caller is None or caller.is_guest,
             tags=body.tags,
             languages=body.languages,
@@ -177,7 +188,7 @@ def create_student(
         _mirror(client, student, spots=body.favourite_spots)
 
     guest_token = None
-    if caller is None:
+    if caller is None or pending_guest:
         guest_token = auth.issue_guest_token(student.id)
         # Link the identity now that the row it names exists, so a retried
         # POST /students from this guest updates them instead of creating a

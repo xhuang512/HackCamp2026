@@ -106,8 +106,8 @@ function Gate() {
 
   if (auth.status === 'loading') return <Splash label="Signing you in" />
 
-  /* guestPending is a tapped "Continue as guest" with no token yet: the guest
-     token only exists once POST /students returns one. */
+  /* guestPending supports the older tokenless demo transition. Current demo
+     guests receive a short-lived token before onboarding opens. */
   if (auth.status === 'anon' && !auth.guestPending) return <Welcome />
 
   /* `aha` is null when nobody shares any of their gaps, which the store can

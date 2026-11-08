@@ -6,7 +6,7 @@ frontend and the tests both already speak them. Everything below them is new
 and follows the API contract in docs/AGENTS.md.
 """
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
@@ -17,7 +17,6 @@ from app import codes, store
 from app.auth import get_current_student_id, onboarded_user
 from app.constants import (
     CONFIRMED,
-    JOINED,
     MAX_GROUP_SIZE,
 )
 from app.db import get_db_client
@@ -29,6 +28,7 @@ from app.groups_view import (
     live_members,
     state_for,
 )
+from app.lifecycle import GroupLifecycle, GroupStatus, check_in_allowed
 from app.models import (
     CheckInCodeOut,
     CheckInRequest,
@@ -38,15 +38,17 @@ from app.models import (
     OpenGroupOut,
 )
 from app.repositories import (
+    CheckInConflictError,
     InvitationConflictError,
     RecordNotFoundError,
     RepositoryError,
 )
 from app.repositories.buildings import BuildingRepository
 from app.repositories.free_blocks import FreeBlockRepository
-from app.repositories.group_members import GroupMemberRepository, state_of
+from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.students import StudentRepository
+from app.timezones import APPLICATION_TIMEZONE
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -383,29 +385,43 @@ def _member_and_group(client: Client, group_id: str, student_id: str):
 # ---------------------------------------------------------------- check in
 
 
+def get_checkin_now() -> datetime:
+    """Clock dependency kept injectable for deterministic boundary tests."""
+    return datetime.now(timezone.utc)
+
+
 @router.get(
     "/{id}/checkin-code",
     response_model=CheckInCodeOut,
     summary="The caller's current check-in code",
     description=(
-        "Signed, rotates every 30 seconds, and only validates between "
-        "members of the same group. There are no building codes."
+        "Signed, rotates every 30 seconds, and is available only to an "
+        "accepted member during a confirmed or active meeting."
     ),
 )
 def get_checkin_code(
     id: Annotated[str, Path(description="Opaque group identifier")],
     student_id: Annotated[str, Depends(get_current_student_id)],
     client: Annotated[Client, Depends(get_db_client)],
+    now: Annotated[datetime, Depends(get_checkin_now)],
 ) -> CheckInCodeOut:
-    all_members, _ = _member_and_group(client, id, student_id)
+    all_members, _ = _checkin_context(client, id, student_id, now)
     mine = next(m for m in all_members if str(m["student_id"]) == student_id)
-    if mine.get("response") != JOINED:
+    joined = joined_members(all_members)
+    try:
+        issued = codes.issue(student_id, now=now.timestamp())
+    except codes.CheckInCodeConfigurationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Join the group before checking in.",
-        )
-    issued = codes.issue(student_id)
-    return CheckInCodeOut(code=issued.code, expires_in=issued.expires_in)
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meetup check-in is not configured",
+        ) from exc
+    return CheckInCodeOut(
+        code=issued.code,
+        expires_in=issued.expires_in,
+        joined_count=len(joined),
+        checked_in_count=len(checked_in_members(all_members)),
+        my_state="checked_in" if mine.get("arrived_at") is not None else "joined",
+    )
 
 
 @router.post(
@@ -413,8 +429,8 @@ def get_checkin_code(
     response_model=CheckInResult,
     summary="Submit a scanned groupmate's code",
     description=(
-        "Checks both people in. Repeat scans of the same pair change "
-        "nothing. A code from outside the group is rejected."
+        "Checks two accepted members in atomically during their meeting. "
+        "Repeat scans are idempotent and cross-group codes are rejected."
     ),
 )
 def post_checkin(
@@ -422,11 +438,17 @@ def post_checkin(
     body: CheckInRequest,
     student_id: Annotated[str, Depends(get_current_student_id)],
     client: Annotated[Client, Depends(get_db_client)],
+    now: Annotated[datetime, Depends(get_checkin_now)],
 ) -> CheckInResult:
-    all_members, group = _member_and_group(client, id, student_id)
-    members = GroupMemberRepository(client)
+    all_members, _ = _checkin_context(client, id, student_id, now)
 
-    scanned_id = codes.read(body.code)
+    try:
+        scanned_id = codes.read(body.code, now=now.timestamp())
+    except codes.CheckInCodeConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meetup check-in is not configured",
+        ) from exc
     # One answer for every bad code: wrong shape, bad signature, expired
     # window, or a member of another group. Telling a scanner which would
     # help nobody but a forger.
@@ -439,20 +461,94 @@ def post_checkin(
         )
     if not any(str(m["student_id"]) == scanned_id for m in all_members):
         raise HTTPException(status_code=422, detail="That code is not valid.")
+    presenter = next(
+        m for m in all_members if str(m["student_id"]) == scanned_id
+    )
+    if presenter.get("invitation_status") != "accepted":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Both students must accept the invitation before checking in",
+        )
 
     try:
-        changed = members.mark_arrived(id, (student_id, scanned_id))
-        refreshed = members.list_for_group(id)
+        result = GroupMemberRepository(client).check_in_pair(
+            id,
+            student_id,
+            scanned_id,
+            now.isoformat(),
+        )
+    except RecordNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CheckInConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RepositoryError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not record the check-in",
+            detail="Could not record meetup check-in",
         ) from exc
 
-    mine = next((m for m in refreshed if str(m["student_id"]) == student_id), None)
     return CheckInResult(
-        joined_count=len(joined_members(refreshed)),
-        checked_in_count=len(checked_in_members(refreshed)),
-        my_state=state_of(mine) if mine is not None else "invited",
-        counted=changed > 0,
+        joined_count=int(result["joined_count"]),
+        checked_in_count=int(result["checked_in_count"]),
+        my_state="checked_in",
+        counted=int(result["changed_count"]) > 0,
     )
+
+
+def _checkin_context(
+    client: Client,
+    group_id: str,
+    student_id: str,
+    now: datetime,
+) -> tuple[list[dict], GroupLifecycle]:
+    all_members, group_row = _member_and_group(client, group_id, student_id)
+    mine = next(m for m in all_members if str(m["student_id"]) == student_id)
+    if mine.get("invitation_status") != "accepted":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accept the group invitation before checking in",
+        )
+
+    group = _as_lifecycle(group_row)
+    if check_in_allowed(group, at=now):
+        return all_members, group
+    if group.status == GroupStatus.FORMING:
+        detail = "The group must be confirmed before check-in"
+    elif group.status in {GroupStatus.COMPLETED, GroupStatus.DISSOLVED}:
+        detail = "This group is no longer eligible for check-in"
+    elif now < group.meeting_start:
+        detail = "Check-in opens when the meeting starts"
+    else:
+        detail = "The meeting check-in window has ended"
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def _as_lifecycle(row: dict) -> GroupLifecycle:
+    on_date = row["on_date"]
+    if not isinstance(on_date, date):
+        on_date = date.fromisoformat(str(on_date))
+    start_time = _parse_group_time(row["start_time"])
+    end_time = _parse_group_time(row["end_time"])
+    confirmed_at = row.get("confirmed_at")
+    return GroupLifecycle(
+        status=GroupStatus(str(row["status"])),
+        invitation_deadline=_parse_group_datetime(row["invite_expires_at"]),
+        meeting_start=datetime.combine(on_date, start_time, APPLICATION_TIMEZONE),
+        meeting_end=datetime.combine(on_date, end_time, APPLICATION_TIMEZONE),
+        confirmed_at=(
+            _parse_group_datetime(confirmed_at) if confirmed_at is not None else None
+        ),
+    )
+
+
+def _parse_group_time(value: object) -> time:
+    return value if isinstance(value, time) else time.fromisoformat(str(value))
+
+
+def _parse_group_datetime(value: object) -> datetime:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(
+        str(value).replace("Z", "+00:00")
+    )
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise RepositoryError("Group timestamp is missing timezone information")
+    return parsed

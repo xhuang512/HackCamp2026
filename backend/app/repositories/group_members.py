@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
 from typing import Any, Literal
 
 from app.constants import CHECKED_IN, DECLINED, EXPIRED, INVITED, JOINED
 from app.repositories.base import (
+    CheckInConflictError,
     InvitationConflictError,
     RecordNotFoundError,
     RepositoryError,
@@ -146,30 +146,39 @@ class GroupMemberRepository:
             )
         return normalize_membership(rows[0])
 
-    def mark_arrived(self, group_id: str, student_ids: tuple[str, ...]) -> int:
-        """Mark accepted members arrived; repeat scans remain idempotent."""
-        members = {
-            str(member["student_id"]): member for member in self.list_for_group(group_id)
-        }
-        now = datetime.now(timezone.utc).isoformat()
-        changed = 0
-        for student_id in student_ids:
-            member = members.get(student_id)
-            if member is None or member.get("invitation_status") != "accepted":
-                continue
-            if member.get("arrived_at") is not None:
-                continue
-            rows = execute(
-                self.client.table("group_members")
-                .update({"arrived_at": now})
-                .eq("group_id", group_id)
-                .eq("student_id", student_id)
-                .eq("invitation_status", "accepted")
-                .is_("arrived_at", "null"),
-                "record group check-in",
-            )
-            changed += int(bool(rows))
-        return changed
+    def check_in_pair(
+        self,
+        group_id: str,
+        scanner_id: str,
+        presenter_id: str,
+        checked_in_at: str,
+    ) -> dict[str, Any]:
+        """Atomically check in two accepted members through the database RPC."""
+        try:
+            rpc_response = self.client.rpc(
+                "check_in_group_members",
+                {
+                    "p_group_id": group_id,
+                    "p_scanner_id": scanner_id,
+                    "p_presenter_id": presenter_id,
+                    "p_checked_in_at": checked_in_at,
+                },
+            ).execute()
+        except Exception as exc:
+            code = _error_attribute(exc, "code")
+            message = _error_attribute(exc, "message") or "Group check-in was rejected"
+            if code in {"P0002", "22P02"}:
+                raise RecordNotFoundError(message) from exc
+            if code in {"P0001", "22023"}:
+                raise CheckInConflictError(message) from exc
+            raise RepositoryError("Database operation failed: group check-in") from exc
+
+        rows = getattr(rpc_response, "data", None)
+        if rows is None:
+            raise RepositoryError("Database returned no result: group check-in")
+        if not rows:
+            raise RecordNotFoundError("Group check-in returned no membership")
+        return dict(rows[0])
 
     def _list(self, query: Any, operation: str) -> list[dict[str, Any]]:
         return [normalize_membership(row) for row in execute(query, operation)]

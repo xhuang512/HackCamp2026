@@ -6,9 +6,9 @@ kinds of bearer token, and the rest of the app cannot tell them apart:
   Auth0 access token   Verified against Auth0's public keys. `sub` is the
                        identity; students.auth_sub is the only thing we store
                        about it. We never see or keep the email address.
-  Guest token          Issued by POST /students in demo mode only. Signed with
-                       GUEST_TOKEN_SECRET so a guest cannot mint one for
-                       another guest's student id.
+  Guest token          A short-lived token starts demo onboarding. POST
+                       /students replaces it with a token bound to that
+                       guest's student id. Both use GUEST_TOKEN_SECRET.
 
 Both arrive in the Authorization header, never a cookie: the frontend and
 backend sit on different domains and Safari blocks cross-site cookies.
@@ -21,6 +21,7 @@ Three dependencies, so a route says what it needs rather than re-checking:
 """
 
 import hmac
+import secrets
 import time
 from dataclasses import dataclass
 from hashlib import sha256
@@ -70,6 +71,18 @@ def issue_guest_token(student_id: str) -> str:
     """
     expires_at = int(time.time()) + config.GUEST_TOKEN_HOURS * 3600
     payload = f"{student_id}.{expires_at}"
+    return f"guest.{payload}.{_sign(payload)}"
+
+
+def issue_guest_onboarding_token() -> str:
+    """Issue a short-lived demo identity before a student row exists.
+
+    The token authenticates screenshot parsing and the eventual signup, but
+    onboarded_user() still rejects it on every profile-only route.
+    """
+    subject = f"onboarding-{secrets.token_urlsafe(12)}"
+    expires_at = int(time.time()) + 30 * 60
+    payload = f"{subject}.{expires_at}"
     return f"guest.{payload}.{_sign(payload)}"
 
 
@@ -175,6 +188,12 @@ def current_caller(
         student_id = _read_guest_token(token)
         if student_id is None:
             return None
+        if student_id.startswith("onboarding-"):
+            return Caller(
+                auth_sub=f"guest:{student_id}",
+                is_guest=True,
+                student=None,
+            )
         student = store.get(student_id)
         if student is None:
             return None

@@ -1,5 +1,5 @@
 import unittest
-from datetime import date, time
+from datetime import date, datetime, time
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -8,6 +8,8 @@ from app import auth, codes, config, demo, store
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.main import app
+from app.routers.groups import get_checkin_now
+from app.timezones import APPLICATION_TIMEZONE
 from tests.fakes import FakeSupabase
 
 
@@ -91,6 +93,60 @@ class ApiContractTests(unittest.TestCase):
             [(1, "13:00", "15:00"), (3, "13:00", "15:00")],
         )
 
+    def test_onboarding_guest_session_is_replaced_after_signup(self) -> None:
+        with patch.object(config, "DEMO_MODE", True):
+            pending = self.client.post("/auth/guest-session")
+            response = self.client.post(
+                "/students",
+                headers={
+                    "Authorization": f"Bearer {pending.json()['guest_token']}"
+                },
+                json={
+                    "first_name": "Maya",
+                    "tags": ["transfer"],
+                    "preset_id": "tue-thu-afternoons",
+                    "guest": True,
+                },
+            )
+
+        self.assertEqual(pending.status_code, 200)
+        self.assertEqual(response.status_code, 201)
+        permanent = response.json()["guest_token"]
+        student_id = response.json()["student"]["id"]
+        self.assertEqual(auth._read_guest_token(permanent), student_id)
+
+        profile = self.client.get(
+            "/me",
+            headers={"Authorization": f"Bearer {permanent}"},
+        )
+        self.assertEqual(profile.status_code, 200)
+        self.assertTrue(profile.json()["onboarded"])
+
+    def test_signup_accepts_reviewed_schedule_with_tags_and_courses(self) -> None:
+        response = self.client.post(
+            "/students",
+            json={
+                "first_name": "Maya",
+                "free_blocks": [
+                    {"day": 1, "start": "13:00", "end": "15:00"}
+                ],
+                "tags": ["transfer"],
+                "courses": ["STAT 406", "STAT 405"],
+                "guest": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        student_id = response.json()["student"]["id"]
+        self.assertEqual(
+            [
+                (row["day"], row["start_time"], row["end_time"])
+                for row in self.database.tables["free_blocks"]
+                if row["student_id"] == student_id
+            ],
+            [(1, "13:00", "15:00")],
+        )
+
     def test_create_student_validates_required_fields(self) -> None:
         response = self.client.post("/students", json={"first_name": "Maya"})
 
@@ -153,9 +209,8 @@ class ApiContractTests(unittest.TestCase):
         )
 
     def test_checkin_checks_both_students_in_once(self) -> None:
-        for membership in self.database.tables["group_members"]:
-            membership["invitation_status"] = "accepted"
-        other = codes.issue("s_other").code
+        now = self._make_group_checkin_ready()
+        other = codes.issue("s_other", now=now.timestamp()).code
 
         first = self.client.post(
             "/groups/g_41/checkin",
@@ -177,12 +232,11 @@ class ApiContractTests(unittest.TestCase):
         self.assertFalse(again.json()["counted"])
 
     def test_checkin_rejects_a_code_from_outside_the_group(self) -> None:
-        for membership in self.database.tables["group_members"]:
-            membership["invitation_status"] = "accepted"
+        now = self._make_group_checkin_ready()
 
         response = self.client.post(
             "/groups/g_41/checkin",
-            json={"code": codes.issue("s_stranger").code},
+            json={"code": codes.issue("s_stranger", now=now.timestamp()).code},
             headers=self.auth_headers,
         )
 
@@ -193,12 +247,11 @@ class ApiContractTests(unittest.TestCase):
         )
 
     def test_checkin_explains_that_your_own_code_cannot_be_used(self) -> None:
-        for membership in self.database.tables["group_members"]:
-            membership["invitation_status"] = "accepted"
+        now = self._make_group_checkin_ready()
 
         response = self.client.post(
             "/groups/g_41/checkin",
-            json={"code": codes.issue("s_current").code},
+            json={"code": codes.issue("s_current", now=now.timestamp()).code},
             headers=self.auth_headers,
         )
 
@@ -335,7 +388,12 @@ class ApiContractTests(unittest.TestCase):
     def test_map_shows_a_building_once_three_students_are_there(self) -> None:
         # The map answers "what is happening right now", so it only reads
         # today's groups. The seed group sits on the next Tuesday.
-        self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["groups"][0]["on_date"] = datetime.now(
+            APPLICATION_TIMEZONE
+        ).date().isoformat()
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        for membership in self.database.tables["group_members"]:
+            membership["invitation_status"] = "accepted"
         self.database.tables["students"].append(
             {"id": "s_third", "first_name": "Rosa", "paused": False, "deleted_at": None}
         )
@@ -343,7 +401,7 @@ class ApiContractTests(unittest.TestCase):
             {
                 "group_id": "g_41",
                 "student_id": "s_third",
-                "response": "joined",
+                "invitation_status": "accepted",
                 "arrived_at": None,
             }
         )
@@ -413,6 +471,24 @@ class ApiContractTests(unittest.TestCase):
             for row in self.database.tables["group_members"]
             if row["student_id"] == student_id
         )
+
+    def _make_group_checkin_ready(self) -> datetime:
+        now = datetime(2026, 11, 10, 13, 30, tzinfo=APPLICATION_TIMEZONE)
+        group = self.database.tables["groups"][0]
+        group.update(
+            {
+                "on_date": now.date().isoformat(),
+                "start_time": "13:00:00",
+                "end_time": "14:00:00",
+                "status": "confirmed",
+                "invite_expires_at": now.replace(hour=12, minute=50).isoformat(),
+                "confirmed_at": now.replace(hour=12, minute=55).isoformat(),
+            }
+        )
+        for membership in self.database.tables["group_members"]:
+            membership["invitation_status"] = "accepted"
+        app.dependency_overrides[get_checkin_now] = lambda: now
+        return now
 
     def test_patch_me_reaches_the_table_the_matcher_reads(self) -> None:
         response = self.client.patch(

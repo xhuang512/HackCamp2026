@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
-from zoneinfo import ZoneInfo
+
+from app.timezones import APPLICATION_TIMEZONE
 
 
 def next_weekday(target: int) -> date:
@@ -19,7 +20,7 @@ def seed_tables() -> dict[str, list[dict[str, Any]]]:
     group_start = datetime.combine(
         group_date,
         datetime.strptime("13:15", "%H:%M").time(),
-        tzinfo=ZoneInfo("America/Vancouver"),
+        tzinfo=APPLICATION_TIMEZONE,
     )
     return {
         "tags": [
@@ -142,6 +143,8 @@ class FakeRpcQuery:
         self.params = params
 
     def execute(self) -> SimpleNamespace:
+        if self.name == "check_in_group_members":
+            return self._check_in_group_members()
         if self.name != "respond_to_group_invitation":
             raise FakePostgrestError("42883", f"Unknown RPC: {self.name}")
 
@@ -220,6 +223,102 @@ class FakeRpcQuery:
                     "group_status": group["status"],
                     "accepted_count": accepted_count,
                     "invite_expires_at": group["invite_expires_at"],
+                }
+            ]
+        )
+
+    def _check_in_group_members(self) -> SimpleNamespace:
+        group_id = str(self.params["p_group_id"])
+        scanner_id = str(self.params["p_scanner_id"])
+        presenter_id = str(self.params["p_presenter_id"])
+        checked_in_at = datetime.fromisoformat(
+            str(self.params["p_checked_in_at"]).replace("Z", "+00:00")
+        )
+        if scanner_id == presenter_id:
+            raise FakePostgrestError(
+                "22023", "A member cannot scan their own check-in code"
+            )
+        group = next(
+            (
+                row
+                for row in self.client.tables["groups"]
+                if str(row["id"]) == group_id
+            ),
+            None,
+        )
+        if group is None:
+            raise FakePostgrestError("P0002", "Group was not found")
+        if group["status"] not in {"confirmed", "active"}:
+            raise FakePostgrestError(
+                "P0001",
+                f"Group is not eligible for check-in while {group['status']}",
+            )
+
+        local_zone = APPLICATION_TIMEZONE
+        on_date = date.fromisoformat(str(group["on_date"]))
+        start = time.fromisoformat(str(group["start_time"]))
+        end = time.fromisoformat(str(group["end_time"]))
+        meeting_start = datetime.combine(on_date, start, local_zone)
+        meeting_end = datetime.combine(on_date, end, local_zone)
+        if checked_in_at < meeting_start:
+            raise FakePostgrestError("P0001", "Check-in opens when the meeting starts")
+        if checked_in_at >= meeting_end:
+            raise FakePostgrestError("P0001", "The meeting check-in window has ended")
+
+        pair = [
+            member
+            for member in self.client.tables["group_members"]
+            if str(member["group_id"]) == group_id
+            and str(member["student_id"]) in {scanner_id, presenter_id}
+        ]
+        if len(pair) != 2 or any(
+            member.get("invitation_status") != "accepted" for member in pair
+        ):
+            raise FakePostgrestError(
+                "P0001",
+                "Both students must have accepted the invitation before checking in",
+            )
+
+        changed = 0
+        for member in pair:
+            if member.get("arrived_at") is None:
+                member["arrived_at"] = checked_in_at.isoformat()
+                changed += 1
+        if group["status"] == "confirmed":
+            group["status"] = "active"
+            group["status_changed_at"] = checked_in_at.isoformat()
+
+        group_members = [
+            member
+            for member in self.client.tables["group_members"]
+            if str(member["group_id"]) == group_id
+        ]
+        return SimpleNamespace(
+            data=[
+                {
+                    "group_id": group_id,
+                    "scanner_id": scanner_id,
+                    "presenter_id": presenter_id,
+                    "joined_count": sum(
+                        member.get("invitation_status") == "accepted"
+                        for member in group_members
+                    ),
+                    "checked_in_count": sum(
+                        member.get("invitation_status") == "accepted"
+                        and member.get("arrived_at") is not None
+                        for member in group_members
+                    ),
+                    "scanner_arrived_at": next(
+                        member["arrived_at"]
+                        for member in pair
+                        if str(member["student_id"]) == scanner_id
+                    ),
+                    "presenter_arrived_at": next(
+                        member["arrived_at"]
+                        for member in pair
+                        if str(member["student_id"]) == presenter_id
+                    ),
+                    "changed_count": changed,
                 }
             ]
         )

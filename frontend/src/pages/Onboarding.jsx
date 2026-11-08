@@ -13,6 +13,7 @@ import {
 import { LANGUAGES, PRESETS, STUDENT_TAGS, VISIBILITY_OPTIONS } from '../lib/presets.js'
 import CourseInput from '../components/CourseInput.jsx'
 import OnboardStep from '../components/OnboardStep.jsx'
+import ScheduleEditor from '../components/ScheduleEditor.jsx'
 
 /* Onboarding, four questions for a student and three for a demo guest.
 
@@ -48,6 +49,7 @@ export default function Onboarding({ onDone }) {
   })
   const [step, setStep] = useState(() => Math.min(resumeStep(readDraft(sub)), total))
   const [busy, setBusy] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
   const [submitError, setSubmitError] = useState(null)
   /* Set when POST /students refused only because of the courses. */
   const [termBlocked, setTermBlocked] = useState(false)
@@ -244,9 +246,41 @@ export default function Onboarding({ onDone }) {
           ))}
         </fieldset>
 
+        <div className="onboard-schedule-choice">
+          <span className="onboard-schedule-choice__or">or</span>
+          <button
+            type="button"
+            className="btn btn--outline btn--lg"
+            aria-expanded={scheduleOpen}
+            aria-controls="schedule-editor"
+            onClick={() => setScheduleOpen((open) => !open)}
+          >
+            {scheduleOpen
+              ? 'Close timetable upload'
+              : draft.free_blocks === null
+                ? 'Upload timetable screenshot'
+                : 'Review uploaded timetable'}
+          </button>
+          {draft.free_blocks !== null && (
+            <p className="inline-message" role="status">
+              {draft.free_blocks.length} reviewed free block{draft.free_blocks.length === 1 ? '' : 's'} selected.
+            </p>
+          )}
+        </div>
+
+        {scheduleOpen && (
+          <ScheduleEditor
+            initialBlocks={draft.free_blocks ?? []}
+            requireBlocks
+            onConfirm={(freeBlocks) => {
+              answer({ preset_id: null, free_blocks: freeBlocks })
+            }}
+          />
+        )}
+
         <p className="note note--sm">
-          Uploading a screenshot of your timetable comes later. It will show
-          you what it read before anything is saved.
+          We show what Gemini read before using anything. You can edit every
+          suggested free block, or keep using one of the reliable presets.
         </p>
       </OnboardStep>
     )

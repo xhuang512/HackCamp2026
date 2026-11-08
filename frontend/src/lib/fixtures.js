@@ -94,6 +94,7 @@ export const campusMap = {
     lng: -123.2497,
     joined_count: 4,
     checked_in_count: 2,
+    state: 'active',
   },
 }
 

@@ -95,11 +95,23 @@ export function resumeStep(draft) {
     is what the endpoint requires. */
 export function toStudentBody(draft, { guest }) {
   const useBlocks = draft.preset_id === null && draft.free_blocks !== null
+  /* /schedule/parse and PUT /me/schedule use start_time/end_time, while the
+     established POST /students contract names the same values start/end.
+     Keep that translation at the API boundary so an uploaded schedule can
+     be submitted without changing either backend contract. Also tolerate
+     start/end in an older saved draft. */
+  const signupBlocks = useBlocks
+    ? draft.free_blocks.map((block) => ({
+        day: block.day,
+        start: block.start ?? block.start_time,
+        end: block.end ?? block.end_time,
+      }))
+    : null
 
   return {
     first_name: draft.first_name.trim(),
     preset_id: useBlocks ? null : draft.preset_id,
-    free_blocks: useBlocks ? draft.free_blocks : null,
+    free_blocks: signupBlocks,
     tags: draft.tags,
     courses: draft.courses,
     languages: draft.languages,

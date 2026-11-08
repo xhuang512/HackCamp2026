@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import time
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, Mock, patch
@@ -8,6 +9,7 @@ from unittest.mock import ANY, MagicMock, Mock, patch
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app import auth, config
 from app.auth import create_guest_session
 from app.db import get_db_client
 from app.gemini_schedule import (
@@ -276,6 +278,38 @@ class ScheduleApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.parser.parse.assert_not_called()
 
+    def test_parse_allows_verified_identity_before_onboarding(self) -> None:
+        self.parser.parse.return_value = ExtractedSchedule()
+        app.dependency_overrides[auth.current_user] = lambda: auth.Caller(
+            auth_sub="auth0|new-student",
+            is_guest=False,
+            student=None,
+        )
+
+        response = self.client.post(
+            "/schedule/parse",
+            files={"image": ("calendar.png", png_bytes(), "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.parser.parse.assert_called_once()
+
+    def test_parse_allows_short_lived_demo_guest_during_onboarding(self) -> None:
+        self.parser.parse.return_value = ExtractedSchedule()
+        with patch.object(config, "DEMO_MODE", True):
+            session = self.client.post("/auth/guest-session")
+            response = self.client.post(
+                "/schedule/parse",
+                headers={
+                    "Authorization": f"Bearer {session.json()['guest_token']}"
+                },
+                files={"image": ("calendar.png", png_bytes(), "image/png")},
+            )
+
+        self.assertEqual(session.status_code, 200)
+        self.assertEqual(response.status_code, 200)
+        self.parser.parse.assert_called_once()
+
     def test_parse_returns_validated_events_and_unconfirmed_suggestions(self) -> None:
         self.parser.parse.return_value = ExtractedSchedule(
             timed_events=[
@@ -401,6 +435,13 @@ class ScheduleApiTests(unittest.TestCase):
         self.assertEqual(len(other), 1)
         self.assertEqual(self.database.tables["group_members"], memberships_before)
         self.assertEqual(matching.call_count, 2)
+        self.assertEqual(
+            store.get("s_current").free_blocks,
+            [
+                (1, time(9, 0), time(10, 0)),
+                (3, time(14, 0), time(16, 0)),
+            ],
+        )
 
     def test_confirm_schedule_rejects_overlap_without_changing_data(self) -> None:
         original = list(self.database.tables["free_blocks"])

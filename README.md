@@ -200,16 +200,20 @@ clients call FastAPI and do not receive that key.
 
 Lifecycle V2 is the only schema supported by the backend. The canonical schema
 creates the final `groups` and `group_members` tables directly, enables RLS,
-installs the atomic `respond_to_group_invitation` RPC, and grants that RPC only
-to the service role. It also uses current Vancouver timezone rules for meeting
-deadlines; install the backend's pinned dependencies so Python uses matching
-IANA timezone data.
+installs the atomic invitation-response and member check-in RPCs, and grants
+those RPCs only to the service role. It also uses current Vancouver timezone
+rules for meeting deadlines and check-in intervals; install the backend's
+pinned dependencies so Python uses matching IANA timezone data.
 
 `schema.sql` is a fresh-install schema, not an upgrade script. Do not apply it
 over an existing database. A database that was already initialized with the
 former migration sequence should be inspected separately before any schema
 changes. Schema installation is never performed automatically at application
 startup.
+
+For an existing Lifecycle V2 database, apply only
+`backend/sql/002_qr_checkin.sql` to install the check-in RPC. Do not rerun
+`schema.sql` over that database. Neither SQL file is executed by the backend.
 
 ### Live Supabase integration validation
 
@@ -312,6 +316,38 @@ members' names are returned. The real meeting building is visible only to an
 accepted member after the group reaches three acceptances and becomes confirmed
 or active.
 
+### Member QR meetup check-in
+
+`GET /groups/{id}/checkin-code` returns an accepted member's signed `hc1` code,
+the joined and checked-in counts, and the caller's attendance state during the
+group's meeting interval. The code rotates every 30 seconds; the backend accepts
+the current rotation and the immediately previous rotation to tolerate a scan
+crossing the boundary. Existing frontend callers that only read `code` and
+`expires_in` remain compatible.
+
+`POST /groups/{id}/checkin` accepts `{"code":"hc1..."}` from a different
+accepted member of the same confirmed or active group. A successful scan
+atomically sets `group_members.arrived_at` for both students, preserves existing
+timestamps on repeated scans, and returns:
+
+```json
+{
+  "joined_count": 3,
+  "checked_in_count": 2,
+  "my_state": "checked_in",
+  "counted": true
+}
+```
+
+Check-in opens exactly at the Vancouver-local meeting start and closes at the
+meeting end. The first successful scan advances a confirmed group to active.
+Invalid, expired, self, cross-group, unaccepted, and out-of-window scans are
+rejected. Codes are signed with the existing backend-only
+`GUEST_SESSION_SECRET`; no new environment variable is required.
+
+This is member-to-member meetup verification. Building sticker QR codes and
+Open Tables from the original Build Plan remain separate future functionality.
+
 ### Schedule screenshot import
 
 `POST /schedule/parse` accepts an authenticated multipart PNG, JPEG, or WebP
@@ -350,8 +386,10 @@ The default suggestion window is weekdays from
 The parse response marks every calculated block as
 `"availability_status": "suggested_not_confirmed"`. A gap in visible calendar
 events is not proof of personal availability, and a one-week screenshot is not
-treated as a recurring schedule. The frontend must let the student review and
-edit the suggestions before saving them.
+treated as a recurring schedule. In the Me tab, **Your timetable** opens the
+upload and review panel. The student can inspect extracted events, edit or
+remove suggested blocks, add a block, and explicitly save the reviewed result.
+The browser does not retain the selected screenshot after the parse request.
 
 With a guest session returned by `POST /students`:
 
@@ -419,13 +457,13 @@ no database writes.
 - Install frontend dependencies using `npm ci`.
 - Keep `.env` files, `.venv/`, and `node_modules/` out of Git.
 - Commit `requirements.txt`, `package.json`, and `package-lock.json` to ensure teammates can install the required dependencies.
-- Authentication, matching, and Supabase persistence are implemented in the
-  backend. The frontend application pages and API integration are still pending.
+- Authentication, matching, Supabase persistence, map rendering, member QR
+  check-in, and reviewed timetable upload are connected through the frontend.
 
 
 # UBC Study & Social Meetups
 
-A mobile-first web app concept for UBC students to find study groups and social meetups that fit between classes. Students can discover a group during a shared timetable gap or scan a QR code at a campus building to start or join a meetup.
+A mobile-first web app concept for UBC students to find study groups and social meetups that fit between classes. Students discover a group during a shared timetable gap and can verify attendance by scanning an accepted groupmate's rotating QR code during the meeting.
 
 ## Why we’re building it
 
@@ -434,7 +472,7 @@ A break between classes is an opportunity to meet classmates, but coordinating s
 ## How it works
 
 - **Find a group during a class gap.** Students review their free blocks and choose Study or Social. Study suggestions prioritize shared courses. Social suggestions can use shared interests. Each suggestion shows the time and why it matches.
-- **Scan a campus QR code.** A code opens the building’s Open Tables page. The app requires verified UBC student sign-in before students can view, host, or join sessions.
+- **Scan a groupmate's QR code.** During the confirmed meeting interval, two accepted members scan each other's rotating code and the backend records both arrivals atomically.
 - **Start or join an Open Table.** A host chooses Study or Social, adds a topic or activity, sets the number of seats, and picks an end time. Students who opted in and have overlapping availability can receive an invite. The app shares the exact table location after joining and closes the listing at its end time.
 - **Earn points for showing up.** Students confirm whether they met up afterward. The proposed rules award 10 points for attending a confirmed meetup or 20 total for hosting one an attendee confirms. A Community Host badge could recognize students who host three confirmed meetups.
 
@@ -445,15 +483,15 @@ A break between classes is an opportunity to meet classmates, but coordinating s
 
 ## HackCamp demo
 
-1. A host scans the Koerner Library QR code and opens a STAT 302 study table.
-2. A classmate with a matching free block receives an invite, joins, and sees where to meet.
-3. After the session, the classmate confirms the meetup and the host sees the points they earned.
+1. Students with a matching free block receive an invitation and accept it.
+2. Once three members accept, they see the public-campus meeting location.
+3. During the meeting, two members scan each other's rotating QR codes and the anonymous attendance count updates.
 
-The demo can use one building and sample timetables. The campus map and timetable screenshot import can follow once this flow works.
+The demo can use one building and sample timetables. The campus map and reviewed timetable screenshot import are available as optional extensions to that core flow.
 
 ## Student access and privacy
 
-- QR codes identify a building. Student verification controls access to its sessions.
+- QR codes identify an accepted member only long enough to verify a same-group meetup; they expose no timetable or building data.
 - Matching uses shared free blocks while keeping full timetables private.
 - Meetups take place in public venues. Exact table details are shared with members who join.
 
