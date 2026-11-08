@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import admin, groups, options, projector, students
+from app.routers import admin, groups, options, projector, schedule, students
 
 ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
@@ -56,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(students.router)
+app.include_router(schedule.router)
 app.include_router(options.router)
 app.include_router(groups.router)
 app.include_router(projector.router)
