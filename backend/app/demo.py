@@ -44,9 +44,9 @@ class SeedResult:
 
 BUILDINGS: tuple[dict[str, object], ...] = (
     {"slug": "nest", "name": "The Nest", "lat": 49.2665, "lng": -123.2497, "is_indoor": True},
-    {"slug": "ikb", "name": "Irving K Barber Learning Centre", "lat": 49.2677, "lng": -123.2525, "is_indoor": True},
-    {"slug": "koerner", "name": "Koerner Library", "lat": 49.2659, "lng": -123.2555, "is_indoor": True},
-    {"slug": "life", "name": "Life Building", "lat": 49.2685, "lng": -123.2490, "is_indoor": True},
+    {"slug": "ikb", "name": "Irving K Barber Learning Centre", "lat": 49.26757, "lng": -123.25272, "is_indoor": True},
+    {"slug": "koerner", "name": "Koerner Library", "lat": 49.26664, "lng": -123.25515, "is_indoor": True},
+    {"slug": "life", "name": "Life Building", "lat": 49.2674326, "lng": -123.2500649, "is_indoor": True},
     {"slug": "buchanan", "name": "Buchanan Courtyard", "lat": 49.2690, "lng": -123.2550, "is_indoor": False},
     {"slug": "angus", "name": "Henry Angus", "lat": 49.2648, "lng": -123.2535, "is_indoor": True},
     {"slug": "icics", "name": "ICICS", "lat": 49.2615, "lng": -123.2490, "is_indoor": True},

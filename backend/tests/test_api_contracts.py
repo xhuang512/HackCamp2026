@@ -392,6 +392,8 @@ class ApiContractTests(unittest.TestCase):
         # The map answers "what is happening right now", so it only reads
         # today's groups. The seed group sits on the next Tuesday.
         self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        self.database.tables["groups"][0]["end_time"] = "23:59:00"
         self.database.tables["students"].append(
             {"id": "s_third", "first_name": "Rosa", "paused": False, "deleted_at": None}
         )
@@ -411,6 +413,32 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(len(buildings), 1)
         self.assertEqual(buildings[0]["slug"], "nest")
         self.assertEqual(buildings[0]["free_count"], 3)
+        self.assertEqual(buildings[0]["groups_meeting"], 1)
+
+    def test_map_group_count_excludes_forming_and_ended_groups(self) -> None:
+        self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["groups"][0]["end_time"] = "00:01:00"
+        for student_id in ("s_third", "s_fourth"):
+            self.database.tables["students"].append(
+                {"id": student_id, "first_name": "Rosa", "paused": False, "deleted_at": None}
+            )
+            self.database.tables["group_members"].append(
+                {
+                    "group_id": "g_41",
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                    "arrived_at": None,
+                }
+            )
+
+        response = self.client.get("/map", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("groups_meeting", response.json()["buildings"][0])
+
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        response = self.client.get("/map", headers=self.auth_headers)
+        self.assertNotIn("groups_meeting", response.json()["buildings"][0])
 
     def test_map_withholds_my_pin_from_an_invited_caller(self) -> None:
         # A genuinely confirmed group, three others accepted, and the caller

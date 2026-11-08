@@ -289,6 +289,7 @@ class BuildingActivity(BaseModel):
     lat: float
     lng: float
     free_count: int = Field(ge=0)
+    groups_meeting: int | None = Field(default=None, ge=1)
 
 
 class MyGroupPin(BaseModel):
