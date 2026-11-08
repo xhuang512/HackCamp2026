@@ -60,11 +60,27 @@ class StudentOut(BaseModel):
     favourite_spots: list[str] = Field(default_factory=list)
 
 
+class BadgeProgress(BaseModel):
+    current: int = Field(ge=0)
+    target: int = Field(ge=1)
+
+
+class TopBadgeOut(BaseModel):
+    slug: str
+    name: str
+
+
+class BadgeOut(TopBadgeOut):
+    earned: bool
+    progress: BadgeProgress
+
+
 class MeResponse(BaseModel):
     """GET /me. The route gate's one question: is there a profile?"""
 
     onboarded: bool
     student: StudentOut | None = None
+    badges: list[BadgeOut] = Field(default_factory=list)
 
 
 class GapOut(BaseModel):
@@ -185,6 +201,11 @@ class MeetingSpot(BaseModel):
     walk_min: int = Field(ge=0, description="Approximate walking time in minutes")
 
 
+class GroupMemberOut(BaseModel):
+    first_name: str
+    top_badge: TopBadgeOut | None = None
+
+
 class GroupOut(BaseModel):
     """The group on the Right now card.
 
@@ -200,7 +221,7 @@ class GroupOut(BaseModel):
     id: str
     state: GroupState
     mode: GroupMode
-    members: list[str] = Field(default_factory=list)
+    members: list[GroupMemberOut] = Field(default_factory=list)
     shared: list[str] = Field(default_factory=list)
     spot: MeetingSpot | None = None
     joined_count: int = Field(ge=0)
@@ -272,6 +293,7 @@ class CheckInResult(BaseModel):
     # False when the pair had already checked each other in. The scan
     # succeeded and changed nothing, which is what AGENTS.md asks for.
     counted: bool
+    new_badges: list[TopBadgeOut] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------- map

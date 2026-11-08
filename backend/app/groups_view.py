@@ -21,6 +21,7 @@ The rules this file enforces, so no route has to remember them:
 from datetime import date
 from typing import Any
 
+from .badges import badges_for, top_badge
 from .constants import (
     ACTIVE,
     COMPLETED,
@@ -34,7 +35,7 @@ from .constants import (
     MAX_GROUP_SIZE,
     MIN_GROUP_SIZE,
 )
-from .models import GapOut, GroupOut, MeetingSpot
+from .models import GapOut, GroupMemberOut, GroupOut, MeetingSpot
 from .repositories.group_members import GroupMemberRepository, state_of
 from .repositories.groups import GroupRepository
 from .repositories.students import StudentRepository
@@ -162,11 +163,24 @@ def group_out(
     # invitation is not membership, so everything the group itself owns,
     # its members' names and where it is meeting, waits until this caller
     # has accepted.
-    names: list[str] = []
+    member_entries: list[GroupMemberOut] = []
     if caller_has_joined(all_members, caller_id):
         joined_ids = [str(m["student_id"]) for m in joined]
         by_id = students.public_names(joined_ids)
-        names = [by_id[item] for item in joined_ids if item in by_id]
+        history = GroupMemberRepository(client).list_for_students(joined_ids)
+        by_student: dict[str, list[dict[str, Any]]] = {}
+        for membership in history:
+            by_student.setdefault(str(membership["student_id"]), []).append(membership)
+        member_entries = [
+            GroupMemberOut(
+                first_name=by_id[student_id],
+                top_badge=top_badge(
+                    badges_for(student_id, by_student.get(student_id, []))
+                ),
+            )
+            for student_id in joined_ids
+            if student_id in by_id
+        ]
 
     # What they share is safe before joining: it is a count or a label held
     # by two or more members, never one person's course.
@@ -186,7 +200,7 @@ def group_out(
         id=group_id,
         state=state,
         mode=str(group.get("mode") or "social"),
-        members=names,
+        members=member_entries,
         shared=shared,
         spot=spot,
         joined_count=joined_count,
