@@ -551,22 +551,49 @@
   gap: var(--s-5);
 }
 
+/* The frame sits the QR on a tinted panel with a white plate behind the
+   code itself, which is what keeps a dark-mode phone scannable: a QR
+   inverted by a theme is a QR no camera reads. */
+.checkin-code__frame {
+  padding: var(--s-9);
+  border-radius: var(--r-sm);
+  background: var(--c-sunken);
+  display: flex;
+  justify-content: center;
+}
+
 .checkin-code {
   display: block;
   width: min(240px, 100%);
   height: auto;
-  align-self: center;
-  border-radius: var(--r-md);
+  border-radius: var(--r-xs);
+  background: #ffffff;
 }
 
 .typed-code {
-  display: block;
-  margin-top: var(--s-3);
-  padding: var(--s-4);
-  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-5) var(--s-6);
   background: var(--c-sunken);
   border-radius: var(--r-sm);
-  color: var(--c-ink);
+}
+
+.typed-code__label {
+  font-size: var(--t-12);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
+}
+
+/* Tabular figures, because the whole point of this number is that someone
+   reads it off a screen and types it on another phone. */
+.typed-code__value {
+  font-size: var(--t-28);
+  font-weight: var(--w-bold);
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-accent-dark);
 }
 
 .copy-code {

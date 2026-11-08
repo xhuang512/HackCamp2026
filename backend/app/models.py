@@ -255,6 +255,9 @@ class CreateGroupRequest(BaseModel):
 
 class CheckInCodeOut(BaseModel):
     code: str
+    typed: str = Field(
+        description="Six-digit fallback, for a phone with no usable camera"
+    )
     expires_in: int = Field(ge=0, description="Seconds until the code rotates")
 
 

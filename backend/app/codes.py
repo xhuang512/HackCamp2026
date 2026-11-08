@@ -5,10 +5,32 @@ it, it changes every 30 seconds, and it only validates between members of the
 same group. Scanning a groupmate's code checks both people in. There are no
 building QR codes.
 
-The code is a string small enough to be a QR payload and short enough to read
-out loud as a fallback when a phone refuses the camera:
+Every code comes in two forms, for two different readers.
+
+The QR payload, which nobody types:
 
     hc1.<student_id>.<window>.<signature>
+
+And a six-digit typed code for the fallback, when a phone has no working
+camera:
+
+    482716
+
+The typed form is the weaker of the two and is deliberately not a truncation
+of the signature above: it is a separate HMAC over a different payload, so
+reading one off a screen tells you nothing about the other. Six digits is
+about 20 bits against the QR payload's 64. What keeps it usable is everything
+around it. It rotates every 30 seconds, it is only accepted from a caller who
+has already joined the group, it only matches a member of that same group,
+and the route tries it against that group's members alone, which is at most
+five people over two time windows. A guess is therefore worth roughly ten
+chances in a million for the 30 seconds it stays current.
+
+That is fine for a code read out across a table and would not be fine as the
+only check-in mechanism. The remaining gap is request rate: nothing here
+limits how fast POST /groups/{id}/checkin can be called, and a short code
+wants a limiter in front of it. Recorded in docs/design-report.md rather than
+built, because it is infrastructure rather than design.
 
 The group id is not in the payload. It comes from the URL the code is posted
 to, and the backend checks that both students are members of that group. That
@@ -29,6 +51,10 @@ from . import config
 from .constants import CHECKIN_WINDOW_SECONDS
 
 PREFIX = "hc1"
+# A separate domain for the typed code's HMAC, so the six digits are not a
+# slice of the QR signature.
+TYPED_PREFIX = "hc1t"
+TYPED_DIGITS = 6
 
 # Enough signature to make guessing hopeless, short enough to keep the QR
 # code readable by a cheap phone camera at arm's length. 16 hex characters is
@@ -39,6 +65,8 @@ _SIGNATURE_CHARS = 16
 @dataclass(frozen=True)
 class CheckInCode:
     code: str
+    # The six-digit fallback for a phone with no usable camera.
+    typed: str
     # Seconds until this code stops being the current one, so the phone knows
     # when to ask for the next one rather than polling blindly.
     expires_in: int
@@ -50,7 +78,63 @@ def issue(student_id: str, *, now: float | None = None) -> CheckInCode:
     window = int(moment // CHECKIN_WINDOW_SECONDS)
     code = f"{PREFIX}.{student_id}.{window}.{_sign(student_id, window)}"
     used = moment % CHECKIN_WINDOW_SECONDS
-    return CheckInCode(code=code, expires_in=int(CHECKIN_WINDOW_SECONDS - used) or 1)
+    return CheckInCode(
+        code=code,
+        typed=_typed(student_id, window),
+        expires_in=int(CHECKIN_WINDOW_SECONDS - used) or 1,
+    )
+
+
+def is_typed(code: str) -> bool:
+    """Whether this looks like the six-digit fallback rather than a QR payload."""
+    candidate = _normalise_typed(code)
+    return len(candidate) == TYPED_DIGITS and candidate.isdigit()
+
+
+def read_typed(
+    code: str,
+    candidate_ids: tuple[str, ...],
+    *,
+    now: float | None = None,
+) -> str | None:
+    """Which of `candidate_ids` a typed code belongs to, or None.
+
+    A six-digit code carries no student id, so unlike read() this cannot work
+    the answer out from the code alone. The caller passes the only students it
+    would ever accept, which is the members of the group being checked into,
+    and the code is tried against each of them. That list is what keeps the
+    search space at ten HMACs rather than the whole student table, and it is
+    also what stops a code minted for one group being spent in another.
+    """
+    candidate = _normalise_typed(code)
+    if not is_typed(candidate):
+        return None
+
+    moment = time.time() if now is None else now
+    current = int(moment // CHECKIN_WINDOW_SECONDS)
+
+    found: str | None = None
+    for student_id in candidate_ids:
+        for window in (current, current - 1):
+            # compare_digest for the same reason read() uses it, and no early
+            # return, so the time taken does not depend on which student
+            # matched or how far down the list they were.
+            if hmac.compare_digest(candidate, _typed(student_id, window)):
+                found = student_id
+    return found
+
+
+def _normalise_typed(code: str) -> str:
+    """Drop the spaces and dashes a student reading digits aloud will add."""
+    return code.strip().replace(" ", "").replace("-", "")
+
+
+def _typed(student_id: str, window: int) -> str:
+    payload = f"{TYPED_PREFIX}.{student_id}.{window}"
+    digest = hmac.new(
+        config.GUEST_TOKEN_SECRET.encode(), payload.encode(), sha256
+    ).hexdigest()
+    return str(int(digest, 16) % (10 ** TYPED_DIGITS)).zfill(TYPED_DIGITS)
 
 
 def read(code: str, *, now: float | None = None) -> str | None:

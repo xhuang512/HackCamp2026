@@ -288,10 +288,15 @@ export async function skipGroup(groupId) {
 
 /** GET /groups/{id}/checkin-code — the caller's current code.
 
-    Returns { code, expires_in }. The code rotates every 30 seconds, so the
-    screen showing it re-asks when expires_in runs out. */
+    Returns { code, typed, expires_in }. `code` is the QR payload, which
+    nobody types. `typed` is a six-digit fallback for a phone whose camera
+    will not open; POST /groups/{id}/checkin takes either. Both rotate every
+    30 seconds, so the screen showing them re-asks when expires_in runs
+    out. */
 export async function getCheckinCode(groupId, { signal } = {}) {
-  if (USE_FIXTURES) return { code: 'hc1.fixture.0.fixture', expires_in: 30 }
+  if (USE_FIXTURES) {
+    return { code: 'hc1.fixture.0.fixture', typed: '482716', expires_in: 30 }
+  }
   return request(`/groups/${encodeURIComponent(groupId)}/checkin-code`, { signal })
 }
 

@@ -23,7 +23,7 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
     if (error?.name === 'NotReadableError') {
       return 'Another app may be using the camera. Close it and try again.'
     }
-    return 'The camera could not start. Paste a groupmate\'s current code below.'
+    return 'The camera could not start. Enter a groupmate\'s six-digit code below.'
   }
 
   function stop() {
@@ -123,7 +123,7 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
       )}
       <form className="typed-form" onSubmit={typed}>
         <label className="field">
-          <span className="field__label">Or enter their code</span>
+          <span className="field__label">Six-digit check-in code</span>
           <input
             className="field__input"
             name="code"
@@ -131,10 +131,11 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
             autoComplete="off"
             autoCapitalize="none"
             spellCheck="false"
-            placeholder="Paste the full hc1… code"
+            inputMode="numeric"
+            placeholder="e.g. 482 716"
           />
         </label>
-        <button type="submit" className="btn btn--ghost" disabled={busy}>Check in</button>
+        <button type="submit" className="btn btn--ghost" disabled={busy}>Check in with code</button>
       </form>
       {message && <p className="inline-message" role="status">{message}</p>}
       <p className="row__meta">

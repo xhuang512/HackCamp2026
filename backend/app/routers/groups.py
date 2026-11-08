@@ -405,7 +405,9 @@ def get_checkin_code(
             detail="Join the group before checking in.",
         )
     issued = codes.issue(student_id)
-    return CheckInCodeOut(code=issued.code, expires_in=issued.expires_in)
+    return CheckInCodeOut(
+        code=issued.code, typed=issued.typed, expires_in=issued.expires_in
+    )
 
 
 @router.post(
@@ -426,7 +428,19 @@ def post_checkin(
     all_members, group = _member_and_group(client, id, student_id)
     members = GroupMemberRepository(client)
 
-    scanned_id = codes.read(body.code)
+    # Two shapes reach here. A scanned QR payload names its own student, so
+    # codes.read() resolves it alone. A typed six-digit code names nobody, so
+    # it is tried against this group's members and nothing else: that list is
+    # both the search space and the reason a code from another group cannot
+    # be spent here.
+    if codes.is_typed(body.code):
+        scanned_id = codes.read_typed(
+            body.code,
+            tuple(str(m["student_id"]) for m in all_members),
+        )
+    else:
+        scanned_id = codes.read(body.code)
+
     # One answer for every bad code: wrong shape, bad signature, expired
     # window, or a member of another group. Telling a scanner which would
     # help nobody but a forger.

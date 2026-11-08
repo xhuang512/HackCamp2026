@@ -205,6 +205,62 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"], "Use a groupmate's code, not your own.")
 
+    def test_typed_code_checks_a_groupmate_in(self) -> None:
+        """The six-digit fallback, for a phone whose camera will not open."""
+        for membership in self.database.tables["group_members"]:
+            membership["invitation_status"] = "accepted"
+        issued = codes.issue("s_other")
+        self.assertEqual(len(issued.typed), 6)
+        self.assertTrue(issued.typed.isdigit())
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            # Spaced the way the screen prints it and a student would type it.
+            json={"code": f"{issued.typed[:3]} {issued.typed[3:]}"},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["checked_in_count"], 2)
+        self.assertEqual(response.json()["my_state"], "checked_in")
+
+    def test_typed_code_from_outside_the_group_is_rejected(self) -> None:
+        """The member list is the whole search space, so a stranger's six
+        digits have nothing to match against even when they are genuine."""
+        for membership in self.database.tables["group_members"]:
+            membership["invitation_status"] = "accepted"
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": codes.issue("s_stranger").typed},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            [m["arrived_at"] for m in self.database.tables["group_members"]],
+            [None, None],
+        )
+
+    def test_a_wrong_six_digit_code_is_rejected(self) -> None:
+        for membership in self.database.tables["group_members"]:
+            membership["invitation_status"] = "accepted"
+        wrong = f"{(int(codes.issue('s_other').typed) + 1) % 1000000:06d}"
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": wrong},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_typed_code_is_not_a_slice_of_the_qr_signature(self) -> None:
+        """Reading one form off a screen must not hand over the other."""
+        issued = codes.issue("s_other")
+        signature = issued.code.rsplit(".", 1)[1]
+        self.assertNotIn(issued.typed, signature)
+
     def test_checkin_code_needs_a_joined_membership(self) -> None:
         response = self.client.get(
             "/groups/g_41/checkin-code", headers=self.auth_headers
