@@ -13,7 +13,7 @@ and building rows, and the phone never tells it where it is. The map page's
 own position stays on the device. docs/MAP.md has the rest of that boundary.
 """
 
-from datetime import date
+from datetime import date, datetime, time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,7 +21,7 @@ from supabase import Client
 
 from app import store
 from app.auth import onboarded_user
-from app.constants import MIN_GROUP_SIZE
+from app.constants import ACTIVE, CONFIRMED, MIN_GROUP_SIZE
 from app.db import get_db_client
 from app.groups_view import (
     checked_in_members,
@@ -35,6 +35,7 @@ from app.repositories import RepositoryError
 from app.repositories.buildings import BuildingRepository
 from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
+from app.timezones import APPLICATION_TIMEZONE
 
 router = APIRouter(tags=["map"])
 
@@ -63,6 +64,7 @@ def get_map(
             int(row["id"]): row for row in BuildingRepository(client).list_all()
         }
         today = date.today()
+        now = datetime.now(APPLICATION_TIMEZONE)
         live = [
             group
             for group in groups.list_from(today)
@@ -82,6 +84,7 @@ def get_map(
     # Distinct students per building, so somebody in two groups at the same
     # place is one person on the map.
     heads: dict[int, set[str]] = {}
+    groups_meeting: dict[int, int] = {}
     my_pin: MyGroupPin | None = None
 
     for group in live:
@@ -92,6 +95,18 @@ def get_map(
         heads.setdefault(int(building_id), set()).update(
             str(member["student_id"]) for member in live_members(group_members)
         )
+
+        end = datetime.combine(
+            today,
+            time.fromisoformat(str(group["end_time"])),
+            tzinfo=APPLICATION_TIMEZONE,
+        )
+        if (
+            str(group.get("status")) in {CONFIRMED, ACTIVE}
+            and end > now
+            and len(joined_members(group_members)) >= MIN_GROUP_SIZE
+        ):
+            groups_meeting[int(building_id)] = groups_meeting.get(int(building_id), 0) + 1
 
         if my_pin is not None:
             continue
@@ -119,6 +134,7 @@ def get_map(
             lat=float(buildings[building_id]["lat"]),
             lng=float(buildings[building_id]["lng"]),
             free_count=len(students),
+            groups_meeting=groups_meeting.get(building_id),
         )
         for building_id, students in sorted(heads.items())
         # The rule, in one line: a count under three is not publishable.

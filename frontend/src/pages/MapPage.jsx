@@ -133,6 +133,10 @@ export default function MapPage() {
         )}
 
         <div className="map-overlay">
+          <div className="map-legend" aria-label="Map legend">
+            <span><i className="map-legend__marker map-legend__marker--groups" aria-hidden="true" />Groups meeting</span>
+            <span><i className="map-legend__marker map-legend__marker--mine" aria-hidden="true" />Your group</span>
+          </div>
           {status === 'idle' && (
             <button type="button" className="btn btn--ghost map-locate" onClick={request}>
               Use my location
