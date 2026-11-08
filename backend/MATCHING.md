@@ -82,7 +82,9 @@ Run mocked tests with:
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The opt-in Supabase integration test creates and removes a temporary student:
+The opt-in Supabase integration tests use `SUPABASE_URL` and
+`SUPABASE_SERVICE_KEY`, create uniquely identified records, and require the
+safe-write confirmation documented in the root README:
 
 ```bash
 RUN_SUPABASE_INTEGRATION=1 .venv/bin/python -m unittest \

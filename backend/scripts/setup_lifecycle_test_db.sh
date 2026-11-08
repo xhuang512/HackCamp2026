@@ -2,9 +2,10 @@
 set -euo pipefail
 
 required=(
-  LIFECYCLE_TEST_DB_URL
-  LIFECYCLE_TEST_PROJECT_REF
-  LIFECYCLE_TEST_CONFIRM_DISPOSABLE
+  SUPABASE_DB_URL
+  SUPABASE_PROJECT_REF
+  SUPABASE_SQL_SETUP_CONFIRM_PROJECT_REF
+  SUPABASE_SQL_SETUP_CONFIRM_EMPTY
 )
 for name in "${required[@]}"; do
   if [[ -z "${!name:-}" ]]; then
@@ -13,13 +14,18 @@ for name in "${required[@]}"; do
   fi
 done
 
-if [[ "${LIFECYCLE_TEST_CONFIRM_DISPOSABLE}" != "YES_DELETE_TEST_DATA" ]]; then
-  echo "Refusing to continue without the disposable-project confirmation." >&2
+if [[ "${SUPABASE_SQL_SETUP_CONFIRM_EMPTY}" != "YES_INITIALIZE_EMPTY_DATABASE" ]]; then
+  echo "Refusing to continue without the empty-database setup confirmation." >&2
   exit 2
 fi
 
-if [[ "${LIFECYCLE_TEST_DB_URL}" != *"${LIFECYCLE_TEST_PROJECT_REF}"* ]]; then
-  echo "The database URL does not match LIFECYCLE_TEST_PROJECT_REF." >&2
+if [[ "${SUPABASE_SQL_SETUP_CONFIRM_PROJECT_REF}" != "${SUPABASE_PROJECT_REF}" ]]; then
+  echo "The confirmed project reference does not match SUPABASE_PROJECT_REF." >&2
+  exit 2
+fi
+
+if [[ "${SUPABASE_DB_URL}" != *"${SUPABASE_PROJECT_REF}"* ]]; then
+  echo "SUPABASE_DB_URL does not match SUPABASE_PROJECT_REF." >&2
   exit 2
 fi
 
@@ -32,7 +38,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 sql_dir="$(cd "${script_dir}/../sql" && pwd)"
 
 existing_students="$(
-  psql "${LIFECYCLE_TEST_DB_URL}" -X -A -t -v ON_ERROR_STOP=1 \
+  psql "${SUPABASE_DB_URL}" -X -A -t -v ON_ERROR_STOP=1 \
     -c "select to_regclass('public.students') is not null"
 )"
 if [[ "${existing_students}" == "t" ]]; then
@@ -40,9 +46,9 @@ if [[ "${existing_students}" == "t" ]]; then
   exit 2
 fi
 
-psql "${LIFECYCLE_TEST_DB_URL}" -X -v ON_ERROR_STOP=1 \
+psql "${SUPABASE_DB_URL}" -X -v ON_ERROR_STOP=1 \
   -f "${sql_dir}/001_core_schema.sql"
-psql "${LIFECYCLE_TEST_DB_URL}" -X -v ON_ERROR_STOP=1 \
+psql "${SUPABASE_DB_URL}" -X -v ON_ERROR_STOP=1 \
   -f "${sql_dir}/002_group_lifecycle.sql"
 
 echo "Lifecycle V2 schema installed in the confirmed disposable project."

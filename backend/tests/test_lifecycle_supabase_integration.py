@@ -6,54 +6,47 @@ from unittest.mock import patch
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from supabase import create_client
 
 from app.auth import create_guest_session
-from app.db import get_db_client
+from app.db import ROOT_ENV_FILE, create_supabase_client, get_db_client
 from app.main import app
 
 
-RUN_INTEGRATION = os.getenv("RUN_LIFECYCLE_V2_INTEGRATION") == "1"
-DISPOSABLE_CONFIRMATION = "YES_DELETE_TEST_DATA"
+load_dotenv(ROOT_ENV_FILE, override=False)
+RUN_INTEGRATION = os.getenv("RUN_SUPABASE_INTEGRATION") == "1"
+WRITE_CONFIRMATION = "YES_I_AM_USING_A_SAFE_TEST_DATABASE"
 APPLICATION_TIMEZONE = ZoneInfo("America/Vancouver")
 
 
 @unittest.skipUnless(
     RUN_INTEGRATION,
-    "Set RUN_LIFECYCLE_V2_INTEGRATION=1 for an explicitly disposable project",
+    "Set RUN_SUPABASE_INTEGRATION=1 to exercise the configured test project",
 )
 class LifecycleSupabaseIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         required = {
-            "LIFECYCLE_TEST_SUPABASE_URL": os.getenv("LIFECYCLE_TEST_SUPABASE_URL"),
-            "LIFECYCLE_TEST_SERVICE_KEY": os.getenv("LIFECYCLE_TEST_SERVICE_KEY"),
-            "LIFECYCLE_TEST_ANON_KEY": os.getenv("LIFECYCLE_TEST_ANON_KEY"),
-            "LIFECYCLE_TEST_PROJECT_REF": os.getenv("LIFECYCLE_TEST_PROJECT_REF"),
+            "SUPABASE_URL": os.getenv("SUPABASE_URL"),
+            "SUPABASE_SERVICE_KEY": os.getenv("SUPABASE_SERVICE_KEY"),
         }
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise RuntimeError(f"Missing lifecycle test configuration: {', '.join(missing)}")
-        if os.getenv("LIFECYCLE_TEST_CONFIRM_DISPOSABLE") != DISPOSABLE_CONFIRMATION:
-            raise RuntimeError("Disposable Supabase confirmation is missing")
+        if os.getenv("SUPABASE_TEST_CONFIRM_WRITES") != WRITE_CONFIRMATION:
+            raise RuntimeError("Safe test-database write confirmation is missing")
 
-        cls.url = str(required["LIFECYCLE_TEST_SUPABASE_URL"])
-        cls.service_key = str(required["LIFECYCLE_TEST_SERVICE_KEY"])
-        cls.anon_key = str(required["LIFECYCLE_TEST_ANON_KEY"])
-        project_ref = str(required["LIFECYCLE_TEST_PROJECT_REF"])
-        if project_ref not in cls.url:
-            raise RuntimeError("Lifecycle test URL does not match its project reference")
-        if os.getenv("SUPABASE_URL") == cls.url:
-            raise RuntimeError("Lifecycle tests refuse to use the configured development project")
+        cls.url = str(required["SUPABASE_URL"])
+        cls.service_key = str(required["SUPABASE_SERVICE_KEY"])
 
-        cls.client = create_client(cls.url, cls.service_key)
-        if cls.client.table("students").select("id").limit(1).execute().data:
-            raise RuntimeError("Disposable lifecycle project must start without students")
-        if cls.client.table("groups").select("id").limit(1).execute().data:
-            raise RuntimeError("Disposable lifecycle project must start without groups")
+        create_supabase_client.cache_clear()
+        cls.client = create_supabase_client()
 
         cls.prefix = f"lifecycle-{uuid4().hex[:10]}"
+        cls.created_group_ids: set[str] = set()
+        cls.created_student_ids: set[str] = set()
         building = (
             cls.client.table("buildings")
             .insert(
@@ -89,6 +82,7 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
             cls._cleanup_test_rows()
             cls.client.table("buildings").delete().eq("id", cls.building_id).execute()
         finally:
+            create_supabase_client.cache_clear()
             cls.environment.stop()
 
     def tearDown(self) -> None:
@@ -96,9 +90,13 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
 
     def test_registration_confirmation_and_privacy_end_to_end(self) -> None:
         sessions = [self._register(f"Member {index}") for index in range(1, 5)]
+        group_id = self._create_group(
+            [str(session["student_id"]) for session in sessions],
+            deadline_delta=timedelta(days=1),
+        )
         suggestion = self._get_now(sessions[0])
         self.assertEqual(suggestion.status_code, 200)
-        group_id = suggestion.json()["group"]["id"]
+        self.assertEqual(suggestion.json()["group"]["id"], group_id)
 
         group = self._group(group_id)
         members = self._members(group_id)
@@ -189,35 +187,22 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
         self.assertEqual(group["status"], "confirmed")
         self.assertIsNotNone(group["confirmed_at"])
 
-    def test_anon_cannot_read_write_or_execute_invitation_rpc(self) -> None:
-        anon = create_client(self.url, self.anon_key)
-        try:
-            visible_students = anon.table("students").select("id").execute().data
-        except Exception:
-            visible_students = []
-        self.assertEqual(visible_students, [])
-        with self.assertRaises(Exception):
-            anon.table("students").insert({"first_name": "Denied"}).execute()
-        with self.assertRaises(Exception):
-            anon.rpc(
-                "respond_to_group_invitation",
-                {
-                    "p_group_id": str(uuid4()),
-                    "p_student_id": str(uuid4()),
-                    "p_response": "accepted",
-                },
-            ).execute()
-
     def _register(self, name: str) -> dict[str, str]:
-        response = self.api.post(
-            "/students",
-            json={
-                "first_name": f"{self.prefix}-{name}",
-                "preset_schedule": "tue_thu_afternoon",
-            },
-        )
+        # Automatic matching is covered by deterministic repository tests. It is
+        # suppressed here so a shared staging database cannot pull unrelated
+        # students into groups created by this integration test.
+        with patch("app.routers.students.run_matching"):
+            response = self.api.post(
+                "/students",
+                json={
+                    "first_name": f"{self.prefix}-{name}",
+                    "preset_schedule": "tue_thu_afternoon",
+                },
+            )
         self.assertEqual(response.status_code, 201, response.text)
-        return response.json()
+        session = response.json()
+        self.created_student_ids.add(str(session["student_id"]))
+        return session
 
     def _create_student(self, label: str) -> str:
         row = (
@@ -226,7 +211,9 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
             .execute()
             .data[0]
         )
-        return str(row["id"])
+        student_id = str(row["id"])
+        self.created_student_ids.add(student_id)
+        return student_id
 
     def _create_group(
         self,
@@ -234,8 +221,14 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
         *,
         deadline_delta: timedelta,
     ) -> str:
-        start = datetime.now(APPLICATION_TIMEZONE) + timedelta(days=2)
-        deadline = datetime.now(APPLICATION_TIMEZONE) + deadline_delta
+        now = datetime.now(APPLICATION_TIMEZONE)
+        start = next(
+            now.replace(hour=13, minute=15, second=0, microsecond=0)
+            + timedelta(days=days_ahead)
+            for days_ahead in range(2, 10)
+            if (now + timedelta(days=days_ahead)).weekday() in {1, 3}
+        )
+        deadline = now + deadline_delta
         row = (
             self.client.table("groups")
             .insert(
@@ -253,6 +246,7 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
             .data[0]
         )
         group_id = str(row["id"])
+        self.created_group_ids.add(group_id)
         self.client.table("group_members").insert(
             [
                 {
@@ -301,24 +295,64 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
 
     @classmethod
     def _cleanup_test_rows(cls) -> None:
-        groups = (
-            cls.client.table("groups")
-            .select("id")
-            .eq("building_id", cls.building_id)
-            .execute()
-            .data
-        )
-        for group in groups:
-            cls.client.table("groups").delete().eq("id", group["id"]).execute()
-        students = (
-            cls.client.table("students")
-            .select("id,first_name")
-            .like("first_name", f"{cls.prefix}-%")
-            .execute()
-            .data
-        )
-        for student in students:
-            cls.client.table("students").delete().eq("id", student["id"]).execute()
+        for group_id in tuple(cls.created_group_ids):
+            cls.client.table("groups").delete().eq("id", group_id).execute()
+            cls.created_group_ids.discard(group_id)
+        for student_id in tuple(cls.created_student_ids):
+            cls.client.table("students").delete().eq("id", student_id).execute()
+            cls.created_student_ids.discard(student_id)
+
+
+@unittest.skipUnless(
+    RUN_INTEGRATION and bool(os.getenv("SUPABASE_ANON_KEY")),
+    "Set SUPABASE_ANON_KEY to run optional anonymous RLS checks",
+)
+class AnonymousSupabasePermissionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if os.getenv("SUPABASE_TEST_CONFIRM_WRITES") != WRITE_CONFIRMATION:
+            raise RuntimeError("Safe test-database write confirmation is missing")
+        url = os.getenv("SUPABASE_URL")
+        anon_key = os.getenv("SUPABASE_ANON_KEY")
+        if not url or not anon_key:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY are required")
+        cls.anon = create_client(url, anon_key)
+        create_supabase_client.cache_clear()
+        cls.service = create_supabase_client()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        create_supabase_client.cache_clear()
+
+    def test_anon_cannot_read_write_or_execute_invitation_rpc(self) -> None:
+        try:
+            visible_students = self.anon.table("students").select("id").execute().data
+        except Exception:
+            visible_students = []
+        self.assertEqual(visible_students, [])
+        denied_name = f"anon-denied-{uuid4().hex[:10]}"
+        try:
+            inserted = (
+                self.anon.table("students")
+                .insert({"first_name": denied_name})
+                .execute()
+                .data
+            )
+        except Exception:
+            inserted = []
+        if inserted:
+            for row in inserted:
+                self.service.table("students").delete().eq("id", row["id"]).execute()
+            self.fail("Anonymous student insertion unexpectedly succeeded")
+        with self.assertRaises(Exception):
+            self.anon.rpc(
+                "respond_to_group_invitation",
+                {
+                    "p_group_id": str(uuid4()),
+                    "p_student_id": str(uuid4()),
+                    "p_response": "accepted",
+                },
+            ).execute()
 
 
 if __name__ == "__main__":

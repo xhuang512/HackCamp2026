@@ -191,49 +191,61 @@ resume an older backend after applying migration 002. The migration is not
 applied automatically by application startup and must first be exercised in a
 disposable or staging Supabase project.
 
-### Disposable lifecycle validation
+### Live Supabase integration validation
 
-Lifecycle integration tests intentionally do not use `SUPABASE_URL` or
-`SUPABASE_SERVICE_KEY`. Create a new, empty Supabase project that can be deleted
-after testing, then export separately named test credentials in the current
-shell. Do not put these values in the repository or copy data from another
-project.
-
-```bash
-export LIFECYCLE_TEST_PROJECT_REF=<disposable-project-ref>
-export LIFECYCLE_TEST_DB_URL=<disposable-postgres-connection-string>
-export LIFECYCLE_TEST_SUPABASE_URL=<disposable-project-url>
-export LIFECYCLE_TEST_SERVICE_KEY=<disposable-service-role-key>
-export LIFECYCLE_TEST_ANON_KEY=<disposable-anon-key>
-export LIFECYCLE_TEST_CONFIRM_DISPOSABLE=YES_DELETE_TEST_DATA
-```
-
-Install the schema only after verifying that every value identifies the new
-project:
+The main integration tests use the backend's normal Supabase configuration.
+Point these variables at a database that is safe for temporary test writes. The
+database does not need to be empty: test students, groups, memberships, and the
+test building receive a unique prefix or identifier, and cleanup targets only
+those records.
 
 ```bash
-backend/scripts/setup_lifecycle_test_db.sh
+export SUPABASE_URL=<test-or-staging-project-url>
+export SUPABASE_SERVICE_KEY=<test-or-staging-service-role-key>
+export SUPABASE_TEST_CONFIRM_WRITES=YES_I_AM_USING_A_SAFE_TEST_DATABASE
 ```
-
-The setup script refuses databases that already contain `public.students`,
-requires the project reference to appear in the connection string, and applies
-`001_core_schema.sql` followed by `002_group_lifecycle.sql` with PostgreSQL's
-stop-on-first-error behavior.
 
 Run the real Supabase lifecycle tests explicitly:
 
 ```bash
 cd backend
-RUN_LIFECYCLE_V2_INTEGRATION=1 .venv/bin/python -m pytest \
+RUN_SUPABASE_INTEGRATION=1 .venv/bin/python -m pytest \
   tests/test_lifecycle_supabase_integration.py -v
 ```
 
-The test suite also refuses to run when the test URL equals the normal
-development `SUPABASE_URL`, requires an empty students/groups dataset, uses a
-unique test prefix, and removes only rows created through its dedicated test
-building and prefix. It exercises automatic matching, lifecycle confirmation,
-privacy, idempotency, invalid and expired responses, anonymous RLS/RPC denial,
-and concurrent acceptances.
+The tests remain skipped unless `RUN_SUPABASE_INTEGRATION=1` is set and refuse
+to write without the exact confirmation above. Automatic matching is suppressed
+during live registration so a shared staging database cannot pull unrelated
+students into test groups; deterministic repository tests cover that trigger.
+The live suite creates its own memberships and exercises lifecycle confirmation,
+privacy, idempotency, invalid and expired responses, and concurrent acceptances.
+
+Anonymous RLS tests are a separate optional class. Add the normal public key to
+run them; the main API integration tests do not require it:
+
+```bash
+export SUPABASE_ANON_KEY=<test-or-staging-anon-key>
+```
+
+### Optional SQL setup for a fresh project
+
+Schema installation is separate from API integration testing. Only when
+initializing a confirmed empty disposable project, export the direct connection
+and project-reference safeguards, then run the setup script:
+
+```bash
+export SUPABASE_DB_URL=<empty-disposable-postgres-connection-string>
+export SUPABASE_PROJECT_REF=<disposable-project-ref>
+export SUPABASE_SQL_SETUP_CONFIRM_PROJECT_REF=<disposable-project-ref>
+export SUPABASE_SQL_SETUP_CONFIRM_EMPTY=YES_INITIALIZE_EMPTY_DATABASE
+backend/scripts/setup_lifecycle_test_db.sh
+```
+
+The setup script refuses a database that already contains `public.students`,
+requires the project reference to appear in `SUPABASE_DB_URL`, and applies
+`001_core_schema.sql` followed by `002_group_lifecycle.sql` with PostgreSQL's
+stop-on-first-error behavior. None of these SQL-setup variables are required by
+the backend or API integration tests.
 
 ## Frontend API integration contract
 
