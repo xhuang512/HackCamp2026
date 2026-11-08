@@ -258,6 +258,61 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"], "Use a groupmate's code, not your own.")
 
+    def test_typed_code_checks_a_groupmate_in(self) -> None:
+        """The six-digit fallback, for a phone whose camera will not open."""
+        now = self._make_group_checkin_ready()
+        issued = codes.issue("s_other", now=now.timestamp())
+        self.assertEqual(len(issued.typed), 6)
+        self.assertTrue(issued.typed.isdigit())
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            # Spaced the way the screen prints it and a student would type it.
+            json={"code": f"{issued.typed[:3]} {issued.typed[3:]}"},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["checked_in_count"], 2)
+        self.assertEqual(response.json()["my_state"], "checked_in")
+
+    def test_typed_code_from_outside_the_group_is_rejected(self) -> None:
+        """The member list is the whole search space, so a stranger's six
+        digits have nothing to match against even when they are genuine."""
+        now = self._make_group_checkin_ready()
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": codes.issue("s_stranger", now=now.timestamp()).typed},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            [m["arrived_at"] for m in self.database.tables["group_members"]],
+            [None, None],
+        )
+
+    def test_a_wrong_six_digit_code_is_rejected(self) -> None:
+        now = self._make_group_checkin_ready()
+        wrong = (
+            f"{(int(codes.issue('s_other', now=now.timestamp()).typed) + 1) % 1000000:06d}"
+        )
+
+        response = self.client.post(
+            "/groups/g_41/checkin",
+            json={"code": wrong},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_typed_code_is_not_a_slice_of_the_qr_signature(self) -> None:
+        """Reading one form off a screen must not hand over the other."""
+        issued = codes.issue("s_other")
+        signature = issued.code.rsplit(".", 1)[1]
+        self.assertNotIn(issued.typed, signature)
+
     def test_checkin_code_needs_a_joined_membership(self) -> None:
         response = self.client.get(
             "/groups/g_41/checkin-code", headers=self.auth_headers
@@ -392,6 +447,10 @@ class ApiContractTests(unittest.TestCase):
             APPLICATION_TIMEZONE
         ).date().isoformat()
         self.database.tables["groups"][0]["status"] = "confirmed"
+        # The map only counts a group that has not finished yet, so a fixture
+        # ending at 14:30 makes this test pass in the morning and fail after
+        # lunch.
+        self.database.tables["groups"][0]["end_time"] = "23:59:00"
         for membership in self.database.tables["group_members"]:
             membership["invitation_status"] = "accepted"
         self.database.tables["students"].append(
@@ -413,6 +472,32 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(len(buildings), 1)
         self.assertEqual(buildings[0]["slug"], "nest")
         self.assertEqual(buildings[0]["free_count"], 3)
+        self.assertEqual(buildings[0]["groups_meeting"], 1)
+
+    def test_map_group_count_excludes_forming_and_ended_groups(self) -> None:
+        self.database.tables["groups"][0]["on_date"] = date.today().isoformat()
+        self.database.tables["groups"][0]["end_time"] = "00:01:00"
+        for student_id in ("s_third", "s_fourth"):
+            self.database.tables["students"].append(
+                {"id": student_id, "first_name": "Rosa", "paused": False, "deleted_at": None}
+            )
+            self.database.tables["group_members"].append(
+                {
+                    "group_id": "g_41",
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                    "arrived_at": None,
+                }
+            )
+
+        response = self.client.get("/map", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("groups_meeting", response.json()["buildings"][0])
+
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        response = self.client.get("/map", headers=self.auth_headers)
+        self.assertNotIn("groups_meeting", response.json()["buildings"][0])
 
     def test_map_withholds_my_pin_from_an_invited_caller(self) -> None:
         # A genuinely confirmed group, three others accepted, and the caller

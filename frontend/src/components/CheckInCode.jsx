@@ -7,6 +7,7 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
   const [state, setState] = useState({
     loading: true,
     code: null,
+    typed: null,
     image: null,
     joinedCount: 0,
     checkedInCount: 0,
@@ -17,7 +18,7 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
 
   async function copyCode() {
     try {
-      await navigator.clipboard.writeText(state.code)
+      await navigator.clipboard.writeText(state.typed)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -38,6 +39,7 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
         setState({
           loading: false,
           code: result.code,
+          typed: result.typed,
           image,
           joinedCount: result.joined_count,
           checkedInCount: result.checked_in_count,
@@ -47,7 +49,14 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
       } catch (error) {
         if (!live) return
         onAvailabilityChange?.(groupId, false)
-        setState((current) => ({ ...current, loading: false, code: null, image: null, error }))
+        setState((current) => ({
+          ...current,
+          loading: false,
+          code: null,
+          typed: null,
+          image: null,
+          error,
+        }))
       }
     }
 
@@ -64,7 +73,7 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
       <StateCard
         title="Check-in opens at your meeting time"
         onRetry={() => {
-          setState((current) => ({ ...current, loading: true, code: null, image: null, error: null }))
+          setState((current) => ({ ...current, loading: true, code: null, typed: null, image: null, error: null }))
           setNonce((value) => value + 1)
         }}
       >
@@ -73,7 +82,7 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
       </StateCard>
     )
   }
-  if (state.error) return <StateCard title={state.error?.status === 409 ? "Check-in is not open" : "Could not make your code"} onRetry={() => { setState((current) => ({ ...current, loading: true, code: null, image: null, error: null })); setNonce((value) => value + 1) }}>{state.error.message}</StateCard>
+  if (state.error) return <StateCard title={state.error?.status === 409 ? "Check-in is not open" : "Could not make your code"} onRetry={() => { setState((current) => ({ ...current, loading: true, code: null, typed: null, image: null, error: null })); setNonce((value) => value + 1) }}>{state.error.message}</StateCard>
 
   return (
     <section className="checkin-card" aria-labelledby="my-code-title">
@@ -87,16 +96,27 @@ export default function CheckInCode({ groupId, meetingStart, onAvailabilityChang
       <div className="checkin-code__frame">
         <img className="checkin-code" src={state.image} alt="Your rotating group check-in QR code" />
       </div>
-      <details>
-        <summary>Show manual code</summary>
-        {/* The signed hc1 token, not a PIN: the backend accepts nothing else. */}
+      {/* Out in the open, not behind a disclosure. It is the whole fallback
+          for a phone whose camera will not open, so it has to be readable
+          without anyone hunting for it. Six digits, spaced in threes,
+          because the person reading it aloud is doing so across a table. */}
+      {state.typed !== null && (
         <div className="typed-code">
           <span className="typed-code__label">Manual check-in code</span>
-          <code className="typed-code__value typed-code__value--token">{state.code}</code>
+          <code className="typed-code__value">
+            {state.typed.slice(0, 3)} {state.typed.slice(3)}
+          </code>
           <button type="button" className="btn btn--ghost copy-code" onClick={copyCode}>
-            {copied ? 'Copied' : 'Copy full code'}
+            {copied ? 'Copied' : 'Copy code'}
           </button>
         </div>
+      )}
+
+      {/* The signed token stays reachable for anything that pastes rather
+          than scans. The endpoint takes either form. */}
+      <details>
+        <summary>Show the full scanned code</summary>
+        <code className="typed-code__value typed-code__value--token">{state.code}</code>
       </details>
     </section>
   )

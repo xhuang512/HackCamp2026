@@ -3,8 +3,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Iterable
 
+from app.constants import MIN_GROUP_SIZE
 
-MIN_CONFIRMED_MEMBERS = 3
 
 
 class GroupStatus(StrEnum):
@@ -109,21 +109,21 @@ def transition_group(
         raise InvalidLifecycleTransition(
             f"cannot transition group from {group.status} to {target}"
         )
-    if target == GroupStatus.CONFIRMED and accepted_count < MIN_CONFIRMED_MEMBERS:
+    if target == GroupStatus.CONFIRMED and accepted_count < MIN_GROUP_SIZE:
         raise InvalidLifecycleTransition(
-            f"confirmation requires {MIN_CONFIRMED_MEMBERS} accepted members"
+            f"confirmation requires {MIN_GROUP_SIZE} accepted members"
         )
     if target == GroupStatus.DISSOLVED:
         if at < group.invitation_deadline:
             raise InvalidLifecycleTransition(
                 "a forming group cannot dissolve before its invitation deadline"
             )
-        if accepted_count >= MIN_CONFIRMED_MEMBERS:
+        if accepted_count >= MIN_GROUP_SIZE:
             raise InvalidLifecycleTransition(
                 "a group with enough accepted members cannot be dissolved"
             )
     if target in {GroupStatus.ACTIVE, GroupStatus.COMPLETED} and (
-        accepted_count < MIN_CONFIRMED_MEMBERS
+        accepted_count < MIN_GROUP_SIZE
     ):
         raise InvalidLifecycleTransition(
             f"an {target} group requires {MIN_CONFIRMED_MEMBERS} accepted members"
@@ -178,7 +178,7 @@ def respond_to_invitation(
     updated_memberships[member_index] = replace(current, invitation_status=response)
     accepted_count = accepted_member_count(updated_memberships)
     updated_group = group
-    if group.status == GroupStatus.FORMING and accepted_count >= MIN_CONFIRMED_MEMBERS:
+    if group.status == GroupStatus.FORMING and accepted_count >= MIN_GROUP_SIZE:
         updated_group = transition_group(
             group,
             GroupStatus.CONFIRMED,
@@ -214,7 +214,7 @@ def expire_invitations(
     if group.status == GroupStatus.FORMING:
         target = (
             GroupStatus.CONFIRMED
-            if accepted_count >= MIN_CONFIRMED_MEMBERS
+            if accepted_count >= MIN_GROUP_SIZE
             else GroupStatus.DISSOLVED
         )
         updated_group = transition_group(

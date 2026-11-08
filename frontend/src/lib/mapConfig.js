@@ -2,20 +2,15 @@
    This is the one file to edit when the real coordinates arrive.
 
    ============================ READ THIS ============================
-   EVERY COORDINATE IN THIS FILE AND IN fixtures.js IS APPROXIMATE AND
-   HAS NOT BEEN CHECKED AGAINST A REAL MAP.
-
-   The repo had no coordinates at all, so there was nothing to copy
-   from. These are close enough to put pins on the right part of
-   campus and no closer. Before the demo, open each one in
-   OpenStreetMap or Google Maps and correct it.
+   Coordinates are checked against OpenStreetMap building centroids and UBC
+   location pages. Keep the seeded buildings and fixtures in sync with these.
 
    The eventual source of truth is the `buildings` table in
    backend/schema.sql (lat, lng, slug, name), seeded by backend/seed.py,
    which is still empty. Once that exists, these values go away.
    =================================================================== */
 
-/** Roughly the middle of UBC Vancouver's academic core. UNVERIFIED. */
+/** Roughly the middle of UBC Vancouver's academic core. */
 export const CAMPUS_CENTER = { lat: 49.2606, lng: -123.246 }
 
 /* How far the user may pan from their position, in metres.

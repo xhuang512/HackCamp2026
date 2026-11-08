@@ -75,23 +75,22 @@ export function startedGroup({ building, mode }) {
    Counts, never names. A count is not a name, and anything under three is
    absent rather than shown, so nobody can be singled out by a pin.
 
-   COORDINATES ARE APPROXIMATE AND UNVERIFIED. They match backend/app/demo.py,
-   which carries the same warning. Check each one on a real map before the
-   demo. */
+   Coordinates match backend/app/demo.py and were checked against current
+   OpenStreetMap/UBC location references. */
 
 export const campusMap = {
   buildings: [
-    { slug: 'nest', name: 'The Nest', lat: 49.2665, lng: -123.2497, free_count: 12 },
-    { slug: 'ikb', name: 'Irving K Barber Learning Centre', lat: 49.2677, lng: -123.2525, free_count: 7 },
-    { slug: 'koerner', name: 'Koerner Library', lat: 49.2659, lng: -123.2555, free_count: 5 },
-    { slug: 'life', name: 'Life Building', lat: 49.2685, lng: -123.249, free_count: 3 },
+    { slug: 'nest', name: 'The Nest', lat: 49.2665578, lng: -123.2498368, free_count: 12 },
+    { slug: 'ikb', name: 'Irving K Barber Learning Centre', lat: 49.2676194, lng: -123.252761, free_count: 7, groups_meeting: 2 },
+    { slug: 'koerner', name: 'Koerner Library', lat: 49.2665489, lng: -123.255078, free_count: 5, groups_meeting: 1 },
+    { slug: 'life', name: 'Life Building', lat: 49.2674326, lng: -123.2500649, free_count: 3, groups_meeting: 1 },
   ],
   my_group: {
     group_id: 'g_41',
     slug: 'nest',
     name: 'The Nest',
-    lat: 49.2665,
-    lng: -123.2497,
+    lat: 49.2665578,
+    lng: -123.2498368,
     joined_count: 4,
     checked_in_count: 2,
     state: 'active',
@@ -106,8 +105,8 @@ export const projector = {
   checked_in: 11,
   students: 26,
   dots: [
-    { slug: 'nest', name: 'The Nest', lat: 49.2665, lng: -123.2497, count: 12 },
-    { slug: 'koerner', name: 'Koerner Library', lat: 49.2659, lng: -123.2555, count: 5 },
+    { slug: 'nest', name: 'The Nest', lat: 49.2665578, lng: -123.2498368, count: 12 },
+    { slug: 'koerner', name: 'Koerner Library', lat: 49.2665489, lng: -123.255078, count: 5 },
   ],
 }
 

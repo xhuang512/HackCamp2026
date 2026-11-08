@@ -23,7 +23,7 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
     if (error?.name === 'NotReadableError') {
       return 'Another app may be using the camera. Close it and try again.'
     }
-    return 'The camera could not start. Paste a groupmate\'s current code below.'
+    return 'The camera could not start. Enter a groupmate\'s six-digit code below.'
   }
 
   function stop() {
@@ -146,7 +146,8 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
             autoComplete="off"
             autoCapitalize="none"
             spellCheck="false"
-            placeholder="Paste the full hc1… code"
+            inputMode="numeric"
+            placeholder="e.g. 482 716"
           />
         </label>
         <button type="submit" className="btn btn--ghost btn--block" disabled={busy}>Check in with code</button>

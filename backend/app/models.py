@@ -255,6 +255,11 @@ class CreateGroupRequest(BaseModel):
 
 class CheckInCodeOut(BaseModel):
     code: str
+    typed: str = Field(
+        description="Six-digit fallback, for a phone with no usable camera"
+    )
+    # ge=1, not ge=0: issue() floors the remaining seconds at one, because a
+    # phone told a code expires in zero seconds has nothing useful to do.
     expires_in: int = Field(ge=1, description="Seconds until the code rotates")
     joined_count: int = Field(ge=0)
     checked_in_count: int = Field(ge=0)
@@ -289,6 +294,11 @@ class BuildingActivity(BaseModel):
     lat: float
     lng: float
     free_count: int = Field(ge=0)
+    groups_meeting: int | None = Field(
+        default=None,
+        ge=1,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class MyGroupPin(BaseModel):

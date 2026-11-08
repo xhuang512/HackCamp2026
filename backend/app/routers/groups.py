@@ -30,6 +30,7 @@ from app.groups_view import (
     state_for,
 )
 from app.lifecycle import GroupLifecycle, GroupStatus, check_in_allowed
+from app.lifecycle_refresh import refresh_lifecycle
 from app.models import (
     CheckInCodeOut,
     CheckInRequest,
@@ -228,6 +229,7 @@ def _join_forming(members: GroupMemberRepository, group_id: str, student_id: str
 def list_open_groups(
     student: Annotated[store.Student, Depends(onboarded_user)],
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> list[OpenGroupOut]:
     groups = GroupRepository(client)
     members = GroupMemberRepository(client)
@@ -443,6 +445,7 @@ def get_group(
     id: Annotated[str, Path(description="Opaque group identifier")],
     student_id: Annotated[str, Depends(get_current_student_id)],
     client: Annotated[Client, Depends(get_db_client)],
+    _lifecycle: Annotated[None, Depends(refresh_lifecycle)],
 ) -> GroupOut:
     members, group = _member_and_group(client, id, student_id)
     return group_out(client, group, student_id, members=members)
@@ -503,6 +506,7 @@ def get_checkin_code(
         ) from exc
     return CheckInCodeOut(
         code=issued.code,
+        typed=issued.typed,
         expires_in=issued.expires_in,
         joined_count=len(joined),
         checked_in_count=len(checked_in_members(all_members)),
@@ -528,13 +532,26 @@ def post_checkin(
 ) -> CheckInResult:
     all_members, _ = _checkin_context(client, id, student_id, now)
 
+    # Two shapes reach here. A scanned QR payload names its own student, so
+    # codes.read() resolves it alone. A typed six-digit code names nobody, so
+    # it is tried against this group's members and nothing else: that list is
+    # both the search space and the reason a code from another group cannot
+    # be spent here.
     try:
-        scanned_id = codes.read(body.code, now=now.timestamp())
+        if codes.is_typed(body.code):
+            scanned_id = codes.read_typed(
+                body.code,
+                tuple(str(m["student_id"]) for m in all_members),
+                now=now.timestamp(),
+            )
+        else:
+            scanned_id = codes.read(body.code, now=now.timestamp())
     except codes.CheckInCodeConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Meetup check-in is not configured",
         ) from exc
+
     # One answer for every bad code: wrong shape, bad signature, expired
     # window, or a member of another group. Telling a scanner which would
     # help nobody but a forger.

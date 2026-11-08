@@ -13,18 +13,32 @@
 /** The accessible name for one building. Carries no student names. */
 export function placeLabel(place) {
   const people = place.count === 1 ? '1 student' : `${place.count} students`
+  const groups = place.groupsMeeting === 0
+    ? ''
+    : place.groupsMeeting === 1
+      ? '1 group meeting here now'
+      : `${place.groupsMeeting} groups meeting here now`
   if (place.mine) {
-    return `${place.name}, where your group is meeting, ${people} in confirmed groups`
+    return `${place.name}, where your group is meeting${groups ? `, ${groups}` : ''}, ${people} in confirmed groups`
   }
-  return `${place.name}, ${people} in confirmed groups`
+  return `${place.name}${groups ? `, ${groups}` : ''}, ${people} in confirmed groups`
 }
 
 /** The short line under the place name in the sheet list. */
 export function placeMeta(place) {
   const people = place.count === 1 ? '1 student' : `${place.count} students`
   /* free_count from GET /map is the joined members of confirmed or active
-     groups meeting at this building today, not people who are free. */
-  return place.mine ? `Your group is here · ${people} joined` : `${people} in confirmed groups`
+     groups meeting at this building today, not people who are free, so the
+     wording says so rather than claiming a crowd of free students. */
+  const groups =
+    place.groupsMeeting === 0
+      ? ''
+      : place.groupsMeeting === 1
+        ? '1 group meeting'
+        : `${place.groupsMeeting} groups meeting`
+  return place.mine
+    ? `Your group is here${groups ? ` · ${groups}` : ''} · ${people} joined`
+    : `${groups ? `${groups} · ` : ''}${people} in confirmed groups`
 }
 
 /** GET /map into the pins the map and the sheet both draw.
@@ -43,6 +57,7 @@ export function placesFrom(map) {
     lat: building.lat,
     lng: building.lng,
     count: building.free_count,
+    groupsMeeting: building.groups_meeting ?? 0,
     mine: mine !== null && mine.slug === building.slug,
   }))
 
@@ -57,6 +72,7 @@ export function placesFrom(map) {
          they are in it. The three-student floor is about other people's
          buildings, not your own meeting spot. */
       count: mine.joined_count,
+      groupsMeeting: 1,
       mine: true,
     })
   }
