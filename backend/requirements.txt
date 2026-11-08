@@ -39,3 +39,8 @@ uvloop==0.23.0
 watchfiles==1.3.0
 websockets==15.0.1
 yarl==1.25.1
+
+# Test only. The suite in backend/tests/ needs this, and without it a
+# fresh clone cannot run the tests at all. Worth splitting into a
+# requirements-dev.txt once there is more than one test dependency.
+pytest==9.2.0

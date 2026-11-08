@@ -262,4 +262,17 @@ export function clearFixtureStudent() {
   }
 }
 
+/** Hangouts happening now, for the map pins. NEEDS AN ENDPOINT.
+    '/hangouts/now' is a provisional path, not an agreed contract.
+
+    Takes no position argument, and must not grow one. There is
+    deliberately no parameter through which the student's coordinates could
+    reach the backend. The server decides what is public from the group and
+    building rows; the phone never tells it where it is. See
+    src/lib/useMyLocation.js for the rest of that boundary. */
+export async function listHangoutsNow({ signal } = {}) {
+  if (USE_FIXTURES) return fixtures.hangoutsNow
+  return request('/hangouts/now', { signal })
+}
+
 export const usingFixtures = USE_FIXTURES

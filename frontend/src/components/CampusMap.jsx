@@ -1,12 +1,16 @@
-/* Placeholder campus map, straight from the mockup: three routes converging
-   on one spot. AGENTS.md puts the real map on Leaflet via react-leaflet
-   (not installed yet), so this is the dumb version with the same job:
-   show where the group is meeting and roughly how far everyone is.
-   Replacing it should not touch the Map page's layout. */
+/* The static campus map, now the FALLBACK rather than the placeholder.
+   CampusMapLive.jsx is the real Leaflet map.
 
-export default function CampusMap({ spotName = 'The Nest' }) {
+   This one still earns its place: it is the only version that renders with
+   no DOM, no location permission and no network, so it covers a
+   server-side render and a failed map chunk. It also still serves the
+   Right now screen, which only needs to show where one group is meeting.
+
+   Pass `full` to fill a full-bleed slot instead of the 330px box. */
+
+export default function CampusMap({ spotName = 'The Nest', full = false }) {
   return (
-    <div className="map-frame">
+    <div className={full ? 'map-frame map-frame--full' : 'map-frame'}>
       <svg
         viewBox="0 0 350 330"
         preserveAspectRatio="xMidYMid slice"
