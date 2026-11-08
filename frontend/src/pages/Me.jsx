@@ -6,11 +6,12 @@ import { STUDENT_TAGS } from '../lib/presets.js'
 import StateCard from '../components/StateCard.jsx'
 import ScheduleEditor from '../components/ScheduleEditor.jsx'
 import TimetableDay from '../components/TimetableDay.jsx'
+import BadgeCard from '../components/BadgeCard.jsx'
 
 /* Styled from Figma frames 8081:2 (My profile) and 8081:92 (Settings).
 
    Most of what those frames show is not built and is not meant to be:
-   badges and a Super Host role are Tier 3, and pronouns, major, minor, a
+   a Super Host role is Tier 3, and pronouns, major, minor, a
    bio and a favourite spot are fields no endpoint returns. What is here is
    what the API has, wearing the frames' type, fills and corners.
 
@@ -327,6 +328,8 @@ export default function Me() {
               <span className="rd-panel__text">{student.favourite_spots[0]}</span>
             </div>
           )}
+
+          <BadgeCard badges={data.badges ?? []} />
 
           <div className="rd-panel rd-panel--grey">
             <strong className="rd-panel__title">Private to you</strong>

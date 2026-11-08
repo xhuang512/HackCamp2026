@@ -42,7 +42,14 @@ export default function CheckInScanner({ groupId, onCheckedIn }) {
     try {
       const result = await api.postCheckin(groupId, code.trim())
       stop()
-      setMessage(result.counted ? 'You both checked in.' : 'You were already checked in together.')
+      const earned = result.new_badges?.map((badge) => badge.name) ?? []
+      setMessage(
+        earned.length > 0
+          ? `You both checked in. You earned ${earned.join(' and ')}!`
+          : result.counted
+            ? 'You both checked in.'
+            : 'You were already checked in together.',
+      )
       onCheckedIn(result)
     } catch (error) {
       setMessage(

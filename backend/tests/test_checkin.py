@@ -138,6 +138,7 @@ class CheckInApiTests(unittest.TestCase):
                 "checked_in_count": 2,
                 "my_state": "checked_in",
                 "counted": True,
+                "new_badges": [{"slug": "first_hello", "name": "First Hello"}],
             },
         )
         self.assertEqual(self._group()["status"], "active")
@@ -159,6 +160,36 @@ class CheckInApiTests(unittest.TestCase):
         self.assertFalse(second.json()["counted"])
         self.assertEqual(self._member("s_current")["arrived_at"], first_timestamp)
         self.assertEqual(self._member("s_other")["arrived_at"], first_timestamp)
+
+    def test_badges_are_awarded_once_per_verified_checkin(self) -> None:
+        first = self._scan("s_current", self._code("s_other"))
+        repeat = self._scan("s_current", self._code("s_other"))
+        # The presenter was checked in by the first scan, so scanning back
+        # changes nothing for them either.
+        reverse = self._scan("s_other", self._code("s_current"))
+
+        self.assertEqual(
+            [b["slug"] for b in first.json()["new_badges"]], ["first_hello"]
+        )
+        self.assertEqual(repeat.json()["new_badges"], [])
+        self.assertEqual(reverse.json()["new_badges"], [])
+
+        me = self.client.get("/me", headers=self._headers("s_current")).json()
+        self.assertEqual(
+            [(b["slug"], b["earned"], b["progress"]) for b in me["badges"]],
+            [
+                ("first_hello", True, {"current": 1, "target": 1}),
+                ("regular", False, {"current": 1, "target": 3}),
+                ("familiar_face", False, {"current": 1, "target": 5}),
+            ],
+        )
+        self.assertTrue(all(b["description"] for b in me["badges"]))
+
+    def test_me_has_locked_badges_before_any_checkin(self) -> None:
+        me = self.client.get("/me", headers=self._headers("s_current")).json()
+
+        self.assertEqual(len(me["badges"]), 3)
+        self.assertFalse(any(b["earned"] for b in me["badges"]))
 
     def test_invalid_self_wrong_group_and_unaccepted_codes_are_rejected(self) -> None:
         invalid = self._scan("s_current", "not-a-code")

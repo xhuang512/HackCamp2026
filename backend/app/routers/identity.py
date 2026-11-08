@@ -20,10 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 from .. import auth, config, presets, store
-from ..db import get_db_client
+from ..badges import badges_for
+from ..db import get_db_client, get_optional_db_client
 from ..matching import next_matching_dates, run_matching
 from ..repositories import ReferenceDataError, RepositoryError
 from ..repositories.free_blocks import FreeBlockInput, FreeBlockRepository
+from ..repositories.group_members import GroupMemberRepository
 from ..repositories.reference_data import normalize_course_codes
 from ..repositories.students import StudentRepository
 from ..models import (
@@ -113,7 +115,10 @@ def _spot_ids(client: Client, slugs: list[str]) -> list[int]:
     return [buildings[slug] for slug in slugs]
 
 @router.get("/me", response_model=MeResponse)
-def get_me(caller: Annotated[auth.Caller, Depends(auth.current_user)]) -> MeResponse:
+def get_me(
+    caller: Annotated[auth.Caller, Depends(auth.current_user)],
+    client: Annotated[Client | None, Depends(get_optional_db_client)],
+) -> MeResponse:
     """Does the signed-in user have a profile?
 
     The route gate calls this on every app open, so it is the one request
@@ -126,7 +131,28 @@ def get_me(caller: Annotated[auth.Caller, Depends(auth.current_user)]) -> MeResp
     student = caller.student
     if student is None or not student.onboarded:
         return MeResponse(onboarded=False)
-    return MeResponse(onboarded=True, student=_student_out(student))
+    return MeResponse(
+        onboarded=True,
+        student=_student_out(student),
+        badges=_badges(client, student.id),
+    )
+
+
+def _badges(client: Client | None, student_id: str) -> list:
+    """Every badge with progress, or [] when the database cannot answer.
+
+    Badges are decoration. Failing GET /me over them would lock the student
+    out of the whole app, so a read error is logged and the list comes back
+    empty instead.
+    """
+    if client is None:
+        return []
+    try:
+        memberships = GroupMemberRepository(client).list_for_student(student_id)
+    except RepositoryError:
+        logger.exception("Could not load badges for student %s", student_id)
+        return []
+    return badges_for(student_id, memberships)
 
 @router.post("/students", response_model=CreateStudentResponse, status_code=201)
 def create_student(

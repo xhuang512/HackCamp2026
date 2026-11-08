@@ -39,6 +39,14 @@ const PATHS = {
       <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
     </>
   ),
+  /* From origin/feat/badges. */
+  badge: (
+    <>
+      <circle cx="12" cy="9" r="5.5" />
+      <path d="m8.5 13.3-1 7 4.5-2.5 4.5 2.5-1-7" />
+      <path d="m10.2 9 1.2 1.2L14 7.6" />
+    </>
+  ),
 }
 
 export default function Icon({ name, size = 22, label }) {

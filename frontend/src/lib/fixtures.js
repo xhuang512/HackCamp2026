@@ -100,6 +100,31 @@ export const campusMap = {
 
 /* ---------- Projector ---------- */
 
+/* Mirrors GET /me's `badges`, from backend/app/badges.py. */
+export const badges = [
+  {
+    slug: 'first_hello',
+    name: 'First Hello',
+    description: 'Check in at your first meetup.',
+    earned: true,
+    progress: { current: 1, target: 1 },
+  },
+  {
+    slug: 'regular',
+    name: 'Regular',
+    description: 'Check in at 3 meetups.',
+    earned: false,
+    progress: { current: 1, target: 3 },
+  },
+  {
+    slug: 'familiar_face',
+    name: 'Familiar Face',
+    description: 'Check in at 5 meetups.',
+    earned: false,
+    progress: { current: 1, target: 5 },
+  },
+]
+
 export const projector = {
   forming: 3,
   confirmed: 4,

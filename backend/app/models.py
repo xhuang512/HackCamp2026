@@ -60,11 +60,30 @@ class StudentOut(BaseModel):
     favourite_spots: list[str] = Field(default_factory=list)
 
 
+class BadgeProgress(BaseModel):
+    current: int = Field(ge=0)
+    target: int = Field(ge=1)
+
+
+class TopBadgeOut(BaseModel):
+    slug: str
+    name: str
+
+
+class BadgeOut(TopBadgeOut):
+    description: str
+    earned: bool
+    progress: BadgeProgress
+
+
 class MeResponse(BaseModel):
     """GET /me. The route gate's one question: is there a profile?"""
 
     onboarded: bool
     student: StudentOut | None = None
+    # Computed from verified check-ins (app/badges.py). Additive: clients
+    # that ignore it see the same response as before.
+    badges: list[BadgeOut] = Field(default_factory=list)
 
 
 class GapOut(BaseModel):
@@ -272,6 +291,9 @@ class CheckInResult(BaseModel):
     # False when the pair had already checked each other in. The scan
     # succeeded and changed nothing, which is what AGENTS.md asks for.
     counted: bool
+    # Only thresholds the caller crossed in this request, so a repeat scan
+    # always returns [].
+    new_badges: list[TopBadgeOut] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------- map
