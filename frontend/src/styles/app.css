@@ -951,6 +951,7 @@
 
 .onboard__title {
   font-size: var(--t-26);
+  color: var(--c-accent-dark);
 }
 
 .onboard__helper {
@@ -973,11 +974,13 @@
   gap: var(--s-3);
 }
 
+/* Bold navy, the way every field in the wireframes is labelled. It was
+   grey semibold, which read as secondary to the input under it. */
 .field__label,
 .choices legend.field__label {
   font-size: var(--t-13);
-  font-weight: var(--w-semibold);
-  color: var(--c-ink-3);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
   padding: 0;
 }
 
@@ -985,7 +988,7 @@
   min-height: var(--tap-lg);
   padding: 0 var(--s-6);
   border: 1.5px solid var(--c-border-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-xs);
   background: var(--c-bg);
   color: var(--c-ink);
   font-family: inherit;
@@ -1070,7 +1073,7 @@
   min-height: var(--tap-lg);
   padding: var(--s-5) var(--s-6);
   border: 1.5px solid var(--c-border-strong);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-xs);
   background: var(--c-bg);
   cursor: pointer;
 }
@@ -1116,26 +1119,35 @@
   gap: var(--s-3);
 }
 
+/* The frames draw an unselected chip as a tinted pill with no outline and
+   a selected one as a solid accent fill, rather than the same pill with a
+   thicker border. The real checkbox stays inside it, so selection is
+   announced and reachable by keyboard whatever the fill is doing. */
 .chip {
   display: inline-flex;
   align-items: center;
   gap: var(--s-3);
   min-height: var(--tap);
   padding: 0 var(--s-6);
-  border: 1.5px solid var(--c-border-strong);
-  border-radius: var(--r-pill);
-  background: var(--c-bg);
-  font-size: var(--t-15);
-  color: var(--c-ink);
+  border: 1.5px solid transparent;
+  border-radius: var(--r-2xl);
+  background: var(--c-sunken);
+  font-size: var(--t-14);
+  font-weight: var(--w-bold);
+  color: var(--c-accent-dark);
   cursor: pointer;
 }
 
 .chip--on {
-  border-width: 2.5px;
   border-color: var(--c-accent);
-  background: var(--c-accent-wash);
-  font-weight: var(--w-semibold);
-  padding: 0 calc(var(--s-6) - 1px);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+/* The box itself must stay visible against a filled chip: accent-color
+   alone leaves a white tick on near-white in the unselected state. */
+.chip--on .choice__input {
+  accent-color: var(--c-on-accent);
 }
 
 /* The student-type tags are a vertical list, the languages a wrapped row, so
