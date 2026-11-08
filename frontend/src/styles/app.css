@@ -39,22 +39,23 @@
   margin: 0 auto;
   background: var(--c-surface);
   border-top: 1px solid var(--c-border);
-  padding: var(--s-3) var(--s-3) calc(var(--s-10) + env(safe-area-inset-bottom));
+  /* Tighter than before. The bar is navigation, not a surface that needs
+     breathing room, and every pixel here is taken from the screen above it. */
+  padding: var(--s-2) var(--s-3) calc(var(--s-3) + env(safe-area-inset-bottom));
 }
 
 .tabbar__link {
-  min-height: var(--tap-lg);
+  /* 48px keeps the whole link above the 44px touch floor even though the
+     bar itself is now shorter. */
+  min-height: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--s-1);
+  gap: 1px;
   text-decoration: none;
   color: var(--c-ink-3);
-  font-size: var(--t-12);
   font-weight: var(--w-medium);
-  /* The pill below animates, so the label must not shift with it. */
-  padding-top: var(--s-1);
 }
 
 /* The pill sits behind the icon and fills in on the active tab. Sized here
@@ -63,15 +64,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 28px;
+  width: 40px;
+  height: 26px;
   border-radius: var(--r-pill);
   background: transparent;
   transition: background-color 120ms ease-out, color 120ms ease-out;
 }
 
+/* Small and quiet. The icon carries the meaning; the word is there so a
+   first-time student is never guessing, which is why it shrinks rather than
+   disappearing. The link's accessible name is the full label either way. */
 .tabbar__label {
-  line-height: 1.2;
+  font-size: var(--t-10);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
 }
 
 /* Three signals, not one: colour, weight and the filled pill. Colour alone

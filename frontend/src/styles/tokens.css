@@ -187,11 +187,13 @@
      and the whole point of the accessibility track is not guessing. */
   --c-map-scrim: var(--c-bg);
 
-  /* The real height of .tabbar: 8 top + 52 link + 24 bottom + inset.
-     .app__screen used to compute the same total a different way
-     (--tap-lg + --s-11); both now read this token so they cannot drift. */
+  /* The real height of .tabbar: 4 top + 48 link + 8 bottom + inset, so
+     60px plus the home indicator, down from 84px. This token is also the
+     scroll clearance .app__screen leaves, so it has to track the bar's
+     padding and the link's min-height or the page gains a gap or hides
+     content behind the bar. */
   --tabbar-h: calc(
-    var(--tap-lg) + var(--s-3) + var(--s-10) + env(safe-area-inset-bottom)
+    48px + var(--s-2) + var(--s-3) + env(safe-area-inset-bottom)
   );
 
   /* Type */
@@ -205,6 +207,9 @@
      loaded either. */
   --font-display: var(--font-sans);
 
+  /* Only for the tab bar's label, which sits under an icon and is backed
+     by the link's accessible name. Nothing else should go under 12px. */
+  --t-10: 10px;
   --t-12: 12px;
   --t-13: 13px;
   --t-14: 14px;
