@@ -176,16 +176,20 @@ clients call FastAPI and do not receive that key.
 
 Lifecycle V2 is the only schema supported by the backend. The canonical schema
 creates the final `groups` and `group_members` tables directly, enables RLS,
-installs the atomic `respond_to_group_invitation` RPC, and grants that RPC only
-to the service role. It also uses current Vancouver timezone rules for meeting
-deadlines; install the backend's pinned dependencies so Python uses matching
-IANA timezone data.
+installs the atomic invitation-response and member check-in RPCs, and grants
+those RPCs only to the service role. It also uses current Vancouver timezone
+rules for meeting deadlines and check-in intervals; install the backend's
+pinned dependencies so Python uses matching IANA timezone data.
 
 `schema.sql` is a fresh-install schema, not an upgrade script. Do not apply it
 over an existing database. A database that was already initialized with the
 former migration sequence should be inspected separately before any schema
 changes. Schema installation is never performed automatically at application
 startup.
+
+For an existing Lifecycle V2 database, apply only
+`backend/sql/002_qr_checkin.sql` to install the check-in RPC. Do not rerun
+`schema.sql` over that database. Neither SQL file is executed by the backend.
 
 ### Live Supabase integration validation
 
@@ -287,6 +291,38 @@ Names remain hidden until the requesting student joins, and only accepted
 members' names are returned. The real meeting building is visible only to an
 accepted member after the group reaches three acceptances and becomes confirmed
 or active.
+
+### Member QR meetup check-in
+
+`GET /groups/{id}/checkin-code` returns an accepted member's signed `hc1` code,
+the joined and checked-in counts, and the caller's attendance state during the
+group's meeting interval. The code rotates every 30 seconds; the backend accepts
+the current rotation and the immediately previous rotation to tolerate a scan
+crossing the boundary. Existing frontend callers that only read `code` and
+`expires_in` remain compatible.
+
+`POST /groups/{id}/checkin` accepts `{"code":"hc1..."}` from a different
+accepted member of the same confirmed or active group. A successful scan
+atomically sets `group_members.arrived_at` for both students, preserves existing
+timestamps on repeated scans, and returns:
+
+```json
+{
+  "joined_count": 3,
+  "checked_in_count": 2,
+  "my_state": "checked_in",
+  "counted": true
+}
+```
+
+Check-in opens exactly at the Vancouver-local meeting start and closes at the
+meeting end. The first successful scan advances a confirmed group to active.
+Invalid, expired, self, cross-group, unaccepted, and out-of-window scans are
+rejected. Codes are signed with the existing backend-only
+`GUEST_SESSION_SECRET`; no new environment variable is required.
+
+This is member-to-member meetup verification. Building sticker QR codes and
+Open Tables from the original Build Plan remain separate future functionality.
 
 ### Schedule screenshot import
 

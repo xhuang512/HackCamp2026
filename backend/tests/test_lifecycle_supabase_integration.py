@@ -186,6 +186,62 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
         self.assertEqual(group["status"], "confirmed")
         self.assertIsNotNone(group["confirmed_at"])
 
+    def test_member_qr_checkin_persists_both_attendance_timestamps(self) -> None:
+        student_ids = [self._create_student(f"Checkin {index}") for index in range(3)]
+        group_id = self._create_checkin_group(student_ids)
+        scanner = self._session(student_ids[0])
+        presenter = self._session(student_ids[1])
+
+        code_response = self.api.get(
+            f"/groups/{group_id}/checkin-code",
+            headers=self._headers(presenter),
+        )
+        self.assertEqual(code_response.status_code, 200, code_response.text)
+        checked_in = self.api.post(
+            f"/groups/{group_id}/checkin",
+            json={"code": code_response.json()["code"]},
+            headers=self._headers(scanner),
+        )
+
+        self.assertEqual(checked_in.status_code, 200, checked_in.text)
+        self.assertTrue(checked_in.json()["counted"])
+        self.assertEqual(checked_in.json()["checked_in_count"], 2)
+        members = self._members(group_id)
+        arrived = {
+            str(member["student_id"]): member["arrived_at"] for member in members
+        }
+        self.assertIsNotNone(arrived[student_ids[0]])
+        self.assertIsNotNone(arrived[student_ids[1]])
+        self.assertIsNone(arrived[student_ids[2]])
+        self.assertEqual(self._group(group_id)["status"], "active")
+
+    def test_concurrent_pair_checkins_are_atomic_and_idempotent(self) -> None:
+        student_ids = [
+            self._create_student(f"CC{index}") for index in range(3)
+        ]
+        group_id = self._create_checkin_group(student_ids)
+        checked_at = datetime.now(APPLICATION_TIMEZONE).isoformat()
+
+        def check_in(presenter_id: str) -> dict[str, object]:
+            client = create_client(self.url, self.service_key)
+            return client.rpc(
+                "check_in_group_members",
+                {
+                    "p_group_id": group_id,
+                    "p_scanner_id": student_ids[0],
+                    "p_presenter_id": presenter_id,
+                    "p_checked_in_at": checked_at,
+                },
+            ).execute().data[0]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(check_in, student_ids[1:]))
+
+        self.assertEqual(sorted(int(row["changed_count"]) for row in results), [1, 2])
+        self.assertTrue(all(member["arrived_at"] for member in self._members(group_id)))
+        repeated = check_in(student_ids[1])
+        self.assertEqual(int(repeated["changed_count"]), 0)
+
     def test_vancouver_deadline_constraint_covers_pst_pdt_and_current_rules(self) -> None:
         cases = (
             (datetime(2025, 1, 15, 13, tzinfo=APPLICATION_TIMEZONE), -8),
@@ -297,6 +353,41 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
         ).execute()
         return group_id
 
+    def _create_checkin_group(self, student_ids: list[str]) -> str:
+        now = datetime.now(APPLICATION_TIMEZONE)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        row = (
+            self.client.table("groups")
+            .insert(
+                {
+                    "on_date": start.date().isoformat(),
+                    "start_time": start.time().isoformat(timespec="seconds"),
+                    "end_time": end.time().isoformat(timespec="seconds"),
+                    "building_id": self.building_id,
+                    "mode": "social",
+                    "status": "confirmed",
+                    "invite_expires_at": (start - timedelta(minutes=10)).isoformat(),
+                    "confirmed_at": (start - timedelta(minutes=1)).isoformat(),
+                }
+            )
+            .execute()
+            .data[0]
+        )
+        group_id = str(row["id"])
+        self.created_group_ids.add(group_id)
+        self.client.table("group_members").insert(
+            [
+                {
+                    "group_id": group_id,
+                    "student_id": student_id,
+                    "invitation_status": "accepted",
+                }
+                for student_id in student_ids
+            ]
+        ).execute()
+        return group_id
+
     def _group_payload(
         self,
         meeting_start: datetime,
@@ -342,7 +433,7 @@ class LifecycleSupabaseIntegrationTests(unittest.TestCase):
     def _members(self, group_id: str) -> list[dict[str, object]]:
         return (
             self.client.table("group_members")
-            .select("group_id,student_id,invitation_status")
+            .select("group_id,student_id,invitation_status,arrived_at")
             .eq("group_id", group_id)
             .execute()
             .data
@@ -379,7 +470,7 @@ class AnonymousSupabasePermissionTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         create_supabase_client.cache_clear()
 
-    def test_anon_cannot_read_write_or_execute_invitation_rpc(self) -> None:
+    def test_anon_cannot_read_write_or_execute_backend_rpcs(self) -> None:
         try:
             visible_students = self.anon.table("students").select("id").execute().data
         except Exception:
@@ -406,6 +497,16 @@ class AnonymousSupabasePermissionTests(unittest.TestCase):
                     "p_group_id": str(uuid4()),
                     "p_student_id": str(uuid4()),
                     "p_response": "accepted",
+                },
+            ).execute()
+        with self.assertRaises(Exception):
+            self.anon.rpc(
+                "check_in_group_members",
+                {
+                    "p_group_id": str(uuid4()),
+                    "p_scanner_id": str(uuid4()),
+                    "p_presenter_id": str(uuid4()),
+                    "p_checked_in_at": datetime.now(APPLICATION_TIMEZONE).isoformat(),
                 },
             ).execute()
 
