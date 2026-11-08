@@ -63,6 +63,7 @@ class ReferenceDataTests(unittest.TestCase):
             {"id": "transfer", "label": "Transfer student"},
             body["tags"],
         )
+        self.assertIn({"id": "nest", "label": "The Nest"}, body["buildings"])
 
     def test_course_normalization_accepts_common_ubc_forms(self) -> None:
         self.assertEqual(normalize_course_code("stat406"), "STAT 406")

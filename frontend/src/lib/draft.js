@@ -49,7 +49,14 @@ export function readDraft(sub) {
     if (saved?.version !== VERSION) return EMPTY_DRAFT
     /* Spread over the empty draft so a field added since the draft was
        written reads as unanswered instead of undefined. */
-    return { ...EMPTY_DRAFT, ...saved }
+    return {
+      ...EMPTY_DRAFT,
+      ...saved,
+      // Canonical ids changed when onboarding was connected to GET /options.
+      // Preserve an in-progress answer instead of making the student repeat
+      // the flow, but never send the retired aliases to POST /students.
+      tags: (saved.tags ?? []).map((tag) => ({ 'first-year': 'first-term', grad: 'graduate' })[tag] ?? tag),
+    }
   } catch {
     return EMPTY_DRAFT
   }

@@ -8,7 +8,7 @@
    order never changes between renders:
 
      Auth0Bridge        VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID are set.
-                        Passwordless email code, the real thing.
+                        Google sign-in through Auth0.
      GuestOnlyProvider  They are not. Guests only, which is what a fresh
                         clone and the stage demo both get.
 
@@ -57,6 +57,15 @@ function GuestOnlyProvider({ children }) {
   const [token, setToken] = useState(() => api.getSession())
   const [guestPending, setGuestPending] = useState(false)
 
+  useEffect(() => {
+    const expired = () => {
+      setGuestPending(false)
+      setToken(null)
+    }
+    window.addEventListener(api.SESSION_EXPIRED_EVENT, expired)
+    return () => window.removeEventListener(api.SESSION_EXPIRED_EVENT, expired)
+  }, [])
+
   const value = useMemo(
     () => ({
       ...EMPTY,
@@ -64,9 +73,9 @@ function GuestOnlyProvider({ children }) {
       kind: token === null ? null : 'guest',
       sub: token === null ? null : 'guest',
       guestPending,
-      canLoginWithEmail: false,
+      canLoginWithGoogle: false,
       guestAllowed: true,
-      loginWithUbcEmail: () => {},
+      loginWithGoogle: () => {},
       loginAsGuest: () => setGuestPending(true),
       /* Called by the last onboarding step once POST /students hands back a
          guest token. api.js has already stored it; this picks it up. */
@@ -107,6 +116,15 @@ function Auth0Bridge({ children }) {
   const [tokenDead, setTokenDead] = useState(false)
   const [guestToken, setGuestToken] = useState(() => api.getSession())
 
+  useEffect(() => {
+    const expired = () => {
+      setGuestPending(false)
+      setGuestToken(null)
+    }
+    window.addEventListener(api.SESSION_EXPIRED_EVENT, expired)
+    return () => window.removeEventListener(api.SESSION_EXPIRED_EVENT, expired)
+  }, [])
+
   /* api.js stays the only file that calls the backend, so it cannot import
      a React hook to get the token. It asks for one instead. */
   useEffect(() => {
@@ -142,13 +160,10 @@ function Auth0Bridge({ children }) {
       sub: live ? (user?.sub ?? null) : guestToken === null ? null : 'guest',
       error: messageFor(error),
       guestPending,
-      canLoginWithEmail: true,
+      canLoginWithGoogle: true,
       guestAllowed,
-      /* Auth0's hosted page collects the email and the 6-digit code. Code
-         mode, not a magic link: a link opens in the mail app's browser, so
-         the session would land outside our installed app. */
-      loginWithUbcEmail: () =>
-        loginWithRedirect({ authorizationParams: { connection: 'email' } }),
+      loginWithGoogle: () =>
+        loginWithRedirect({ authorizationParams: { connection: 'google-oauth2' } }),
       loginAsGuest: () => setGuestPending(true),
       adoptGuestToken: () => {
         setGuestPending(false)
@@ -171,13 +186,10 @@ function Auth0Bridge({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-/* The UBC-only Post Login Action denies with a message. Auth0 returns it as
-   access_denied with the Action's text, which is already written for a
-   student to read, so it is shown as-is. */
 function messageFor(error) {
   if (!error) return null
   if (error.error === 'access_denied') {
-    return error.message || 'Please use your @student.ubc.ca email.'
+    return error.message || 'Sign in was cancelled. Please try again.'
   }
   return error.message || 'Sign in did not finish. Please try again.'
 }

@@ -26,6 +26,8 @@ from .constants import (
     EXPIRED,
     FORMING,
     JOINED,
+    LEGACY_CANCELLED,
+    LEGACY_PROPOSED,
     MAX_GROUP_SIZE,
     MIN_GROUP_SIZE,
 )
@@ -47,7 +49,7 @@ def live_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         member
         for member in members
-        if member.get("response") not in {DECLINED, EXPIRED}
+        if state_of(member) not in {DECLINED, EXPIRED}
     ]
 
 
@@ -72,8 +74,10 @@ def state_for(group: dict[str, Any], members: list[dict[str, Any]]) -> str:
     one update failed.
     """
     stored = str(group.get("status") or FORMING)
-    if stored in {FORMING, CONFIRMED}:
+    if stored in {FORMING, CONFIRMED, LEGACY_PROPOSED}:
         return CONFIRMED if len(joined_members(members)) >= MIN_GROUP_SIZE else FORMING
+    if stored == LEGACY_CANCELLED:
+        return "dissolved"
     return stored
 
 

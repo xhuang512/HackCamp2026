@@ -30,7 +30,12 @@ DISSOLVED = "dissolved"
 
 # States a group can still be joined or shown in. Excludes completed and
 # dissolved.
-LIVE_GROUP_STATES = (FORMING, CONFIRMED, ACTIVE)
+# ``proposed`` is the pre-002 value. Keeping it readable makes a rolling
+# deploy safe: the app works while the migration is being applied, while all
+# new API responses still use the AGENTS.md state names.
+LEGACY_PROPOSED = "proposed"
+LEGACY_CANCELLED = "cancelled"
+LIVE_GROUP_STATES = (FORMING, CONFIRMED, ACTIVE, LEGACY_PROPOSED)
 
 # Member states. checked_in is deliberately not one of these: a member who
 # has checked in is still a joined member, so check-in is the group_members

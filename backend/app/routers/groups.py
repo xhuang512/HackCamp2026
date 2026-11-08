@@ -80,10 +80,10 @@ _STORED = {"joined": JOINED, "skipped": DECLINED}
 )
 def join_group(
     id: Annotated[str, Path(description="Opaque group identifier", examples=["g_41"])],
-    student_id: Annotated[str, Depends(get_current_student_id)],
+    student: Annotated[store.Student, Depends(onboarded_user)],
     client: Annotated[Client, Depends(get_db_client)],
 ) -> GroupResponseUpdate:
-    return _respond(client, id, student_id, "joined")
+    return _respond(client, id, student, "joined")
 
 
 @router.post(
@@ -93,23 +93,48 @@ def join_group(
 )
 def skip_group(
     id: Annotated[str, Path(description="Opaque group identifier", examples=["g_41"])],
-    student_id: Annotated[str, Depends(get_current_student_id)],
+    student: Annotated[store.Student, Depends(onboarded_user)],
     client: Annotated[Client, Depends(get_db_client)],
 ) -> GroupResponseUpdate:
-    return _respond(client, id, student_id, "skipped")
+    return _respond(client, id, student, "skipped")
 
 
 def _respond(
     client: Client,
     group_id: str,
-    student_id: str,
+    student: store.Student,
     response: Literal["joined", "skipped"],
 ) -> GroupResponseUpdate:
     members = GroupMemberRepository(client)
     try:
-        members.update_response(group_id, student_id, _STORED[response])
+        members.update_response(group_id, student.id, _STORED[response])
         _settle_state(client, group_id)
     except RecordNotFoundError as exc:
+        # A suggested group already has an invited membership to update. An
+        # open group deliberately does not: joining it creates the membership
+        # after re-checking every rule that made it open in the first place.
+        if response == "joined":
+            try:
+                group = GroupRepository(client).get(group_id)
+                group_members = members.list_for_group(group_id)
+                if state_for(group, group_members) != CONFIRMED:
+                    raise HTTPException(status_code=409, detail="That group is not open.")
+                if len(joined_members(group_members)) >= MAX_GROUP_SIZE:
+                    raise HTTPException(status_code=409, detail="That group is full.")
+                if not _overlaps_a_gap(group, student):
+                    raise HTTPException(status_code=409, detail="That group is outside your gap.")
+                members.create_joined(group_id, student.id)
+                _settle_state(client, group_id)
+                return GroupResponseUpdate(group_id=group_id, response=response)
+            except HTTPException:
+                raise
+            except RecordNotFoundError:
+                pass
+            except RepositoryError as create_exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Could not join the open group",
+                ) from create_exc
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RepositoryError as exc:
         raise HTTPException(

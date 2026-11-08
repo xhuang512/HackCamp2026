@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from '../lib/api.js'
+import useAsync from '../lib/useAsync.js'
 import { draftKeyFor, useAuth } from '../lib/authContext.js'
 import {
   EMPTY_DRAFT,
@@ -47,6 +48,13 @@ export default function Onboarding({ onDone }) {
   const [step, setStep] = useState(() => Math.min(resumeStep(readDraft(sub)), total))
   const [busy, setBusy] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  const catalog = useAsync(api.getOptions)
+  const tagOptions =
+    catalog.data?.tags ??
+    STUDENT_TAGS.map((tag) => ({ id: tag.slug, label: tag.label }))
+  const languageOptions =
+    catalog.data?.languages ??
+    LANGUAGES.map((language) => ({ id: language.code, label: language.name }))
 
   /* Moving between questions is a navigation, so say where we landed.
      Without this a screen reader user hears nothing change. */
@@ -84,7 +92,16 @@ export default function Onboarding({ onDone }) {
       setBusy(true)
       setSubmitError(null)
       try {
-        const out = await api.createStudent(toStudentBody(final, { guest }))
+        const allowedTags = new Set(tagOptions.map((option) => option.id))
+        const allowedLanguages = new Set(languageOptions.map((option) => option.id))
+        const canonical = {
+          ...final,
+          tags: final.tags
+            .map((tag) => ({ 'first-year': 'first-term', grad: 'graduate' })[tag] ?? tag)
+            .filter((tag) => allowedTags.has(tag)),
+          languages: final.languages.filter((language) => allowedLanguages.has(language)),
+        }
+        const out = await api.createStudent(toStudentBody(canonical, { guest }))
         /* Clear the draft only once the profile exists. Clearing it first
            would lose every answer if the request failed. */
         clearDraft(sub)
@@ -97,13 +114,13 @@ export default function Onboarding({ onDone }) {
         setSubmitError(
           cause?.status === 0
             ? 'Could not reach the server. Your answers are saved.'
-            : 'That did not save. Your answers are kept, try again.',
+            : cause?.message ?? 'That did not save. Your answers are kept, try again.',
         )
       } finally {
         setBusy(false)
       }
     },
-    [auth, guest, onDone, sub],
+    [auth, guest, languageOptions, onDone, sub, tagOptions],
   )
 
   /* The one way forward. On the last question it submits instead of stepping,
@@ -211,22 +228,22 @@ export default function Onboarding({ onDone }) {
       >
         <fieldset className="choices" ref={focusRef} tabIndex={-1}>
           <legend className="field__label">You are</legend>
-          {STUDENT_TAGS.map((tag) => (
+          {tagOptions.map((tag) => (
             <label
-              key={tag.slug}
+              key={tag.id}
               className={
-                draft.tags.includes(tag.slug) ? 'chip chip--on' : 'chip'
+                draft.tags.includes(tag.id) ? 'chip chip--on' : 'chip'
               }
             >
               <input
                 type="checkbox"
                 className="choice__input"
-                checked={draft.tags.includes(tag.slug)}
+                checked={draft.tags.includes(tag.id)}
                 onChange={(e) =>
                   answer({
                     tags: e.target.checked
-                      ? [...draft.tags, tag.slug]
-                      : draft.tags.filter((t) => t !== tag.slug),
+                      ? [...draft.tags, tag.id]
+                      : draft.tags.filter((t) => t !== tag.id),
                   })
                 }
               />
@@ -251,26 +268,26 @@ export default function Onboarding({ onDone }) {
             <fieldset className="choices">
               <legend className="field__label">Languages you speak (optional)</legend>
               <div className="chips">
-                {LANGUAGES.map((lang) => (
+                {languageOptions.map((lang) => (
                   <label
-                    key={lang.code}
+                    key={lang.id}
                     className={
-                      draft.languages.includes(lang.code) ? 'chip chip--on' : 'chip'
+                      draft.languages.includes(lang.id) ? 'chip chip--on' : 'chip'
                     }
                   >
                     <input
                       type="checkbox"
                       className="choice__input"
-                      checked={draft.languages.includes(lang.code)}
+                      checked={draft.languages.includes(lang.id)}
                       onChange={(e) =>
                         answer({
                           languages: e.target.checked
-                            ? [...draft.languages, lang.code]
-                            : draft.languages.filter((c) => c !== lang.code),
+                            ? [...draft.languages, lang.id]
+                            : draft.languages.filter((c) => c !== lang.id),
                         })
                       }
                     />
-                    <span>{lang.name}</span>
+                    <span>{lang.label}</span>
                   </label>
                 ))}
               </div>

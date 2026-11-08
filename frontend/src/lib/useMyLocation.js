@@ -13,7 +13,7 @@
    2. This file imports nothing from api.js and contains no fetch. The
       missing import IS the boundary. Keep it missing.
 
-   3. api.listHangoutsNow() takes no position argument, not even an
+   3. api.getMap() takes no position argument, not even an
       optional one, so there is no parameter through which a coordinate
       could reach the backend by accident later.
 

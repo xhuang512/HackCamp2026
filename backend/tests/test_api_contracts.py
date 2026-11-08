@@ -50,6 +50,13 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
+    def test_me_returns_the_private_profile(self) -> None:
+        response = self.client.get("/me", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["onboarded"])
+        self.assertTrue(response.json()["student"]["is_guest"])
+
     def test_create_student_returns_guest_session(self) -> None:
         response = self.client.post(
             "/students",
@@ -209,6 +216,68 @@ class ApiContractTests(unittest.TestCase):
         )
         self.assertEqual(current["response"], "joined")
         self.assertEqual(other["response"], "joined")
+
+    def test_join_open_group_creates_a_membership(self) -> None:
+        store.get("s_current").free_blocks = [(1, time(13, 0), time(15, 0))]
+        self.database.tables["group_members"] = [
+            row for row in self.database.tables["group_members"]
+            if row["student_id"] != "s_current"
+        ]
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        for index in range(2):
+            student_id = f"s_open_{index}"
+            self.database.tables["students"].append(
+                {"id": student_id, "first_name": f"Open {index}", "paused": False, "deleted_at": None}
+            )
+            self.database.tables["group_members"].append(
+                {"group_id": "g_41", "student_id": student_id, "response": "joined", "arrived_at": None}
+            )
+
+        response = self.client.post("/groups/g_41/join", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any(
+            row["group_id"] == "g_41" and row["student_id"] == "s_current" and row["response"] == "joined"
+            for row in self.database.tables["group_members"]
+        ))
+
+    def test_open_groups_are_anonymous_and_joinable(self) -> None:
+        store.get("s_current").free_blocks = [(1, time(13, 0), time(15, 0))]
+        self.database.tables["group_members"] = [
+            row for row in self.database.tables["group_members"]
+            if row["student_id"] != "s_current"
+        ]
+        self.database.tables["groups"][0]["status"] = "confirmed"
+        for index in range(2):
+            student_id = f"s_listing_{index}"
+            self.database.tables["students"].append(
+                {"id": student_id, "first_name": f"Hidden {index}", "paused": False, "deleted_at": None}
+            )
+            self.database.tables["group_members"].append(
+                {"group_id": "g_41", "student_id": student_id, "response": "joined", "arrived_at": None}
+            )
+
+        response = self.client.get("/groups/open", headers=self.auth_headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertNotIn("members", response.text)
+        self.assertNotIn("Hidden", response.text)
+
+    def test_start_group_creates_a_joined_founder(self) -> None:
+        store.get("s_current").free_blocks = [(1, time(13, 0), time(15, 0))]
+
+        response = self.client.post(
+            "/groups",
+            json={"building": "nest", "mode": "social", "now": False},
+            headers=self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.assertEqual(body["state"], "forming")
+        self.assertEqual(body["my_state"], "joined")
+        self.assertIsNone(body["spot"])
 
     def test_skip_returns_skipped_response(self) -> None:
         response = self.client.post("/groups/g_41/skip", headers=self.auth_headers)

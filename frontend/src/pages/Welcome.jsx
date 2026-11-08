@@ -4,13 +4,11 @@ import Icon from '../components/Icon.jsx'
 /* One line about the app and one primary button.
    There is nothing else to decide here, so there is nothing else on screen.
 
-   The email and code screens are Auth0's hosted pages. We do not build them,
-   and the designer styles them in the Auth0 dashboard. Code mode, not a
-   magic link: a link opens in the mail app's browser, so the session would
-   land in a different browser from our installed app. */
+   Google sign-in is Auth0's hosted flow. UBC-only email is deliberately
+   paused; docs/SIGNUP.md forbids claiming these are verified accounts. */
 
 export default function Welcome() {
-  const { error, canLoginWithEmail, guestAllowed, loginWithUbcEmail, loginAsGuest } =
+  const { error, canLoginWithGoogle, guestAllowed, loginWithGoogle, loginAsGuest } =
     useAuth()
 
   return (
@@ -36,13 +34,13 @@ export default function Welcome() {
       )}
 
       <div className="welcome__actions">
-        {canLoginWithEmail && (
+        {canLoginWithGoogle && (
           <button
             type="button"
             className="btn btn--primary btn--xl"
-            onClick={loginWithUbcEmail}
+            onClick={loginWithGoogle}
           >
-            Continue with UBC email
+            Continue with Google
           </button>
         )}
 
@@ -51,16 +49,16 @@ export default function Welcome() {
         {guestAllowed && (
           <button
             type="button"
-            className={canLoginWithEmail ? 'btn btn--outline btn--lg' : 'btn btn--primary btn--xl'}
+            className={canLoginWithGoogle ? 'btn btn--outline btn--lg' : 'btn btn--primary btn--xl'}
             onClick={loginAsGuest}
           >
             Continue as guest
           </button>
         )}
 
-        {!canLoginWithEmail && (
+        {!canLoginWithGoogle && (
           <p className="welcome__note">
-            Email sign-in is off until Auth0 is configured. Set
+            Google sign-in is off until Auth0 is configured. Set
             VITE_AUTH0_DOMAIN and VITE_AUTH0_CLIENT_ID to turn it on.
           </p>
         )}
@@ -68,7 +66,7 @@ export default function Welcome() {
 
       <p className="note note--sm">
         <Icon name="lock" size={20} />
-        We never store your email address, and nobody else sees your timetable.
+        Guest profiles are unverified. We never store your email address, and nobody else sees your timetable.
       </p>
     </div>
   )

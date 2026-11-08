@@ -72,7 +72,7 @@ def get_current_suggestion(
             for membership in members.list_for_student(student.id)
             # A declined group is not a suggestion any more. An expired one
             # never became one.
-            if membership["response"] not in {"declined", "expired"}
+            if membership["response"] not in {"declined", "expired", "skipped"}
         ]
         upcoming = groups.list_upcoming(
             [str(membership["group_id"]) for membership in memberships]

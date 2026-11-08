@@ -1,39 +1,134 @@
-/* Sample payloads shaped exactly like the API contract in AGENTS.md.
-   api.js serves these while VITE_USE_FIXTURES is on, so the screens are
-   demoable before the endpoints exist. When an endpoint lands, the fixture
-   for it stops being read. Do not import this file from a component. */
+/* Sample payloads shaped exactly like the API contract in docs/AGENTS.md.
+   api.js serves these only while VITE_USE_FIXTURES=true, which is how the
+   screens stay workable with the backend stopped. Every shape here is the
+   real one; if an endpoint changes, this file changes in the same commit.
+   Do not import this file from a component. */
 
 import { presetById } from './presets.js'
+
+/* ---------- Right now ---------- */
 
 export const meNow = {
   gap: { day: 'tue', start: '13:00', end: '15:00' },
   group: {
     id: 'g_41',
-    members: ['Ji-woo', 'Amir', 'Rosa'],
-    shared: ['STAT 302', '2 transfers', 'Speaks Korean', 'Into guitar'],
+    state: 'confirmed',
+    mode: 'social',
+    members: ['You', 'Ji-woo', 'Amir'],
+    shared: ['STAT 302', '2 transfers', 'Speaks Korean'],
     spot: { building: 'The Nest', walk_min: 4 },
-    response: 'pending',
+    joined_count: 3,
+    checked_in_count: 0,
+    seats_left: 2,
+    my_state: 'invited',
+    needs: 0,
   },
 }
 
-export const projector = {
-  joined: 18,
-  groups: 4,
-  alone: 2,
-}
-
-/* No endpoint for these two yet. See the notes in api.js. */
-
-export const openTables = [
-  { id: 't_1', building: 'Koerner', detail: '2nd floor', seats: 2, mode: 'study', until: '14:30' },
-  { id: 't_2', building: 'Nest', detail: 'food court', seats: 3, mode: 'social', until: '14:00' },
+/* No names, no exact spot. What a student sees before joining is the time,
+   the general area and what the group shares. */
+export const openGroups = [
+  {
+    id: 'g_52',
+    gap: { day: 'tue', start: '13:00', end: '14:30' },
+    mode: 'study',
+    area: 'Koerner Library',
+    seats_left: 2,
+    shared: ['2 transfers'],
+  },
+  {
+    id: 'g_53',
+    gap: { day: 'tue', start: '13:30', end: '15:00' },
+    mode: 'social',
+    area: 'The Nest',
+    seats_left: 1,
+    shared: ['Speaks Cantonese'],
+  },
 ]
 
-export const me = {
-  first_name: 'Sothea',
-  tags: ['transfer', 'commuter'],
-  hangouts_count: 3,
-  paused: false,
+export function startedGroup({ building, mode }) {
+  return {
+    id: 'g_new',
+    state: 'forming',
+    mode,
+    members: ['You'],
+    shared: [],
+    /* Forming, so no spot comes back even though the student picked the
+       building. The screen remembers their own choice instead. */
+    spot: null,
+    joined_count: 1,
+    checked_in_count: 0,
+    seats_left: 4,
+    my_state: 'joined',
+    needs: 2,
+    building,
+  }
+}
+
+/* ---------- Map ----------
+
+   Counts, never names. A count is not a name, and anything under three is
+   absent rather than shown, so nobody can be singled out by a pin.
+
+   COORDINATES ARE APPROXIMATE AND UNVERIFIED. They match backend/app/demo.py,
+   which carries the same warning. Check each one on a real map before the
+   demo. */
+
+export const campusMap = {
+  buildings: [
+    { slug: 'nest', name: 'The Nest', lat: 49.2665, lng: -123.2497, free_count: 12 },
+    { slug: 'ikb', name: 'Irving K Barber Learning Centre', lat: 49.2677, lng: -123.2525, free_count: 7 },
+    { slug: 'koerner', name: 'Koerner Library', lat: 49.2659, lng: -123.2555, free_count: 5 },
+    { slug: 'life', name: 'Life Building', lat: 49.2685, lng: -123.249, free_count: 3 },
+  ],
+  my_group: {
+    group_id: 'g_41',
+    slug: 'nest',
+    name: 'The Nest',
+    lat: 49.2665,
+    lng: -123.2497,
+    joined_count: 4,
+    checked_in_count: 2,
+  },
+}
+
+/* ---------- Projector ---------- */
+
+export const projector = {
+  forming: 3,
+  confirmed: 4,
+  checked_in: 11,
+  students: 26,
+  dots: [
+    { slug: 'nest', name: 'The Nest', lat: 49.2665, lng: -123.2497, count: 12 },
+    { slug: 'koerner', name: 'Koerner Library', lat: 49.2659, lng: -123.2555, count: 5 },
+  ],
+}
+
+/* ---------- Onboarding options ----------
+   Mirrors GET /options, whose ids come from the database lookup tables. */
+
+export const options = {
+  languages: [
+    { id: 'en', label: 'English' },
+    { id: 'zh', label: 'Mandarin Chinese' },
+    { id: 'ko', label: 'Korean' },
+  ],
+  tags: [
+    { id: 'international', label: 'International student' },
+    { id: 'transfer', label: 'Transfer student' },
+    { id: 'commuter', label: 'Commuter' },
+  ],
+  buildings: [
+    { id: 'nest', label: 'The Nest' },
+    { id: 'ikb', label: 'Irving K Barber Learning Centre' },
+    { id: 'koerner', label: 'Koerner Library' },
+    { id: 'life', label: 'Life Building' },
+    { id: 'buchanan', label: 'Buchanan Courtyard' },
+    { id: 'angus', label: 'Henry Angus' },
+    { id: 'icics', label: 'ICICS' },
+    { id: 'woodward', label: 'Woodward Library' },
+  ],
 }
 
 /* ---------- Signup ----------
@@ -42,8 +137,7 @@ export const me = {
    the student actually picked instead of a hardcoded Tuesday.
 
    The real endpoint counts rows. This counts nothing: it derives a plausible
-   number from the gap, which is enough to build and demo the screen against
-   and is replaced the moment the endpoint lands. */
+   number from the gap, which is enough to build the screen against. */
 
 const DAY_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
@@ -65,8 +159,11 @@ export function studentCreated(body) {
     student: {
       id: `fixture-${block.day}${block.start.replace(':', '')}`,
       first_name: body.first_name,
+      is_guest: body.guest === true,
       paused: false,
       visibility: body.visibility ?? 'everyone',
+      tags: body.tags ?? [],
+      favourite_spots: body.favourite_spots ?? [],
     },
     aha: {
       gap: { day: DAY_NAMES[block.day] ?? 'tue', start: block.start, end: block.end },
@@ -78,55 +175,3 @@ export function studentCreated(body) {
     guest_token: body.guest === true ? 'fixture-guest-token' : null,
   }
 }
-
-/* Hangouts happening now, for the map. Shaped off `groups` joined to
-   `buildings` in backend/schema.sql.
-
-   No names. A public surface gets a mode, a place, a joined count and an
-   end time, and nothing else. A count is not a name.
-
-   Only status 'active' rows belong on the map. A 'proposed' group would
-   expose a match before the group has opted in, which the "meeting spots
-   revealed only after the group opts in" rule forbids.
-
-   COORDINATES ARE APPROXIMATE AND UNVERIFIED. See the warning at the top
-   of mapConfig.js: check every lat/lng on a real map before the demo. */
-
-export const hangoutsNow = [
-  {
-    id: 'g_41',
-    mode: 'social',
-    status: 'active',
-    start: '13:00',
-    end: '15:00',
-    size: 4,
-    building: { slug: 'nest', name: 'The Nest', lat: 49.2666, lng: -123.2497 },
-  },
-  {
-    id: 'g_42',
-    mode: 'study',
-    status: 'active',
-    start: '13:15',
-    end: '14:30',
-    size: 3,
-    building: { slug: 'ikb', name: 'Irving K Barber', lat: 49.2675, lng: -123.2527 },
-  },
-  {
-    id: 'g_43',
-    mode: 'study',
-    status: 'active',
-    start: '12:30',
-    end: '14:00',
-    size: 5,
-    building: { slug: 'koerner', name: 'Koerner Library', lat: 49.2679, lng: -123.2555 },
-  },
-  {
-    id: 'g_44',
-    mode: 'social',
-    status: 'active',
-    start: '13:30',
-    end: '14:15',
-    size: 3,
-    building: { slug: 'life', name: 'Life Building', lat: 49.2663, lng: -123.2487 },
-  },
-]

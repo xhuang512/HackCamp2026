@@ -1,28 +1,65 @@
-/* Shared helpers for hangout pins. No React, no DOM.
+/* Shared helpers for map pins. No React, no DOM.
 
-   The label is defined once and used in three places: the pin's
-   aria-label, the pin's popup, and the sheet's button list. Keeping them
-   identical is the point, so a screen-reader user and a sighted user are
-   told the same thing. */
+   A pin is a building with a count on it, which is what GET /map returns.
+   It is never a person: the endpoint omits any building with fewer than
+   three students rather than sending a number somebody could be singled out
+   by, and no name reaches this file at all.
 
-import { formatGap } from './format.js'
+   The label is defined once and used in three places: the pin's aria-label,
+   the pin's popup, and the sheet's button list. Keeping them identical is
+   the point, so a screen-reader user and a sighted user are told the same
+   thing. */
 
-/** "until 3pm" from a hangout's end time. */
-export function untilLabel(hangout) {
-  /* formatGap drops the meridiem on the start when both ends share it, so
-     feed it a zero-length range to get just the end, formatted. */
-  return formatGap({ start: hangout.end, end: hangout.end }).split(' to ')[1]
-}
-
-/** The accessible name for one hangout. Carries no student names. */
-export function hangoutLabel(hangout) {
-  const mode = hangout.mode === 'study' ? 'Study' : 'Social'
-  const people = hangout.size === 1 ? '1 person' : `${hangout.size} people`
-  return `${mode} hangout at ${hangout.building.name}, ${people}, until ${untilLabel(hangout)}`
+/** The accessible name for one building. Carries no student names. */
+export function placeLabel(place) {
+  const people = place.count === 1 ? '1 student' : `${place.count} students`
+  if (place.mine) {
+    return `${place.name}, where your group is meeting, ${people} free nearby`
+  }
+  return `${place.name}, ${people} free nearby`
 }
 
 /** The short line under the place name in the sheet list. */
-export function hangoutMeta(hangout) {
-  const people = hangout.size === 1 ? '1 person' : `${hangout.size} people`
-  return `${hangout.mode}, ${people}, until ${untilLabel(hangout)}`
+export function placeMeta(place) {
+  const people = place.count === 1 ? '1 student' : `${place.count} students`
+  return place.mine ? `Your group is here · ${people} free` : `${people} free nearby`
+}
+
+/** GET /map into the pins the map and the sheet both draw.
+
+    The caller's own group building is merged in rather than added twice:
+    it is already in `buildings` when enough people are there, and absent
+    when it is not, and either way it should appear once and marked. */
+export function placesFrom(map) {
+  const buildings = map?.buildings ?? []
+  const mine = map?.my_group ?? null
+
+  const places = buildings.map((building) => ({
+    id: building.slug,
+    slug: building.slug,
+    name: building.name,
+    lat: building.lat,
+    lng: building.lng,
+    count: building.free_count,
+    mine: mine !== null && mine.slug === building.slug,
+  }))
+
+  if (mine !== null && !places.some((place) => place.slug === mine.slug)) {
+    places.unshift({
+      id: mine.slug,
+      slug: mine.slug,
+      name: mine.name,
+      lat: mine.lat,
+      lng: mine.lng,
+      /* The group's own joined count, which the student is entitled to:
+         they are in it. The three-student floor is about other people's
+         buildings, not your own meeting spot. */
+      count: mine.joined_count,
+      mine: true,
+    })
+  }
+
+  /* Busiest first, so the sheet list reads top down and the student's own
+     building still stands out by its label rather than its position. */
+  return places.sort((a, b) => b.count - a.count)
 }

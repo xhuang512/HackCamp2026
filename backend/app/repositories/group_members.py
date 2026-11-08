@@ -1,8 +1,13 @@
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from app.constants import CHECKED_IN, INVITED, JOINED
-from app.repositories.base import RecordNotFoundError, execute
+from app.constants import CHECKED_IN, DECLINED, INVITED, JOINED
+from app.repositories.base import (
+    RecordNotFoundError,
+    RepositoryError,
+    database_error_code,
+    execute,
+)
 
 # The states the response column can hold. checked_in is absent on purpose:
 # a member who has checked in is still a joined member, so check-in is the
@@ -19,6 +24,7 @@ def state_of(member: dict[str, Any]) -> str:
     live in the column; the fifth is a joined member with an arrival time.
     """
     response = str(member.get("response") or INVITED)
+    response = {"pending": INVITED, "skipped": DECLINED}.get(response, response)
     if response == JOINED and member.get("arrived_at") is not None:
         return CHECKED_IN
     return response
@@ -63,19 +69,27 @@ class GroupMemberRepository:
         upstream changes. The state it writes is `invited`, which is what
         AGENTS.md calls the state the old `pending` meant.
         """
-        return execute(
-            self.client.table("group_members").insert(
-                [
-                    {
-                        "group_id": group_id,
-                        "student_id": student_id,
-                        "response": INVITED,
-                    }
-                    for student_id in student_ids
-                ]
-            ),
-            "create pending group memberships",
-        )
+        def insert(response: str) -> list[dict[str, Any]]:
+            return execute(
+                self.client.table("group_members").insert(
+                    [
+                        {
+                            "group_id": group_id,
+                            "student_id": student_id,
+                            "response": response,
+                        }
+                        for student_id in student_ids
+                    ]
+                ),
+                "create pending group memberships",
+            )
+
+        try:
+            return insert(INVITED)
+        except RepositoryError as exc:
+            if database_error_code(exc) != "23514":
+                raise
+            return insert("pending")
 
     def create_joined(self, group_id: str, student_id: str) -> dict[str, Any]:
         """The student who starts a group is in it, not invited to it."""
@@ -99,13 +113,22 @@ class GroupMemberRepository:
         student_id: str,
         response: MemberResponse,
     ) -> dict[str, Any]:
-        rows = execute(
-            self.client.table("group_members")
-            .update({"response": response})
-            .eq("group_id", group_id)
-            .eq("student_id", student_id),
-            "update group membership response",
-        )
+        def update(stored: str) -> list[dict[str, Any]]:
+            return execute(
+                self.client.table("group_members")
+                .update({"response": stored})
+                .eq("group_id", group_id)
+                .eq("student_id", student_id),
+                "update group membership response",
+            )
+
+        try:
+            rows = update(response)
+        except RepositoryError as exc:
+            if database_error_code(exc) != "23514":
+                raise
+            legacy = {INVITED: "pending", DECLINED: "skipped", "expired": "pending"}
+            rows = update(legacy[response])
         if not rows:
             raise RecordNotFoundError(
                 "No membership exists for the current student and group"

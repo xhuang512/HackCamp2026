@@ -97,8 +97,9 @@ export const STUDENT_TAGS = [
   { slug: 'transfer', label: 'Transfer' },
   { slug: 'exchange', label: 'Exchange' },
   { slug: 'commuter', label: 'Commuter' },
-  { slug: 'first-year', label: 'First year' },
-  { slug: 'grad', label: 'Grad student' },
+  { slug: 'resident', label: 'Residence student' },
+  { slug: 'first-term', label: 'First term at UBC' },
+  { slug: 'graduate', label: 'Graduate student' },
 ]
 
 /* ISO 639-1, matching the `languages` table. A short list keeps step 3 to one
@@ -111,13 +112,8 @@ export const LANGUAGES = [
   { code: 'ja', name: 'Japanese' },
   { code: 'pa', name: 'Punjabi' },
   { code: 'hi', name: 'Hindi' },
-  { code: 'fa', name: 'Persian' },
   { code: 'es', name: 'Spanish' },
   { code: 'fr', name: 'French' },
-  { code: 'km', name: 'Khmer' },
-  { code: 'tl', name: 'Tagalog' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'vi', name: 'Vietnamese' },
 ]
 
 export const VISIBILITY_OPTIONS = [

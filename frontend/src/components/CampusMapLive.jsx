@@ -30,7 +30,7 @@ import {
   PAN_RADIUS_M,
   tileSource,
 } from '../lib/mapConfig.js'
-import { hangoutLabel } from '../lib/hangouts.js'
+import { placeLabel } from '../lib/hangouts.js'
 
 /* Keeps panning inside a circle around `center`.
 
@@ -145,31 +145,37 @@ function MeMarker({ position }) {
   )
 }
 
-/* One pin per hangout.
+/* One pin per building.
 
    Leaflet divIcons are plain divs, so the accessible name and role are set
    through the marker element in an effect: Leaflet's own `alt` option only
-   applies to image icons. The label carries a mode, a place, a count and a
-   time, and never a name. */
-function HangoutPin({ hangout, registry }) {
+   applies to image icons. The label carries a place and a count, and never
+   a name.
+
+   The student's own meeting building gets its own glyph and modifier class
+   rather than only a different colour, because mode and ownership must not
+   be carried by hue alone. */
+function PlacePin({ place, registry }) {
   const markerRef = useRef(null)
-  const label = hangoutLabel(hangout)
+  const label = placeLabel(place)
 
   const icon = useMemo(
     () =>
       L.divIcon({
         className: '',
         html:
-          `<span class="pin pin--${hangout.mode}">` +
-          (hangout.mode === 'study'
-            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10a2 2 0 0 1 2 2v13a1.5 1.5 0 0 0-1.5-1.5H5.5A1.5 1.5 0 0 1 4 16V5.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H14a2 2 0 0 0-2 2v13a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 0 20 16V5.5z"/></svg>'
-            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8.5" r="2.8"/><path d="M3.5 19c.9-2.8 3-4.2 5.5-4.2s4.6 1.4 5.5 4.2"/><path d="M16 6.2a2.8 2.8 0 0 1 0 5.3M18 14.4c1.6.6 2.7 1.8 3.3 3.4"/></svg>'),
+          `<span class="pin pin--${place.mine ? 'mine' : 'social'}">` +
+          (place.mine
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-5.3-6.5-10a6.5 6.5 0 1 1 13 0c0 4.7-6.5 10-6.5 10z"/><circle cx="12" cy="11" r="2.4"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8.5" r="2.8"/><path d="M3.5 19c.9-2.8 3-4.2 5.5-4.2s4.6 1.4 5.5 4.2"/><path d="M16 6.2a2.8 2.8 0 0 1 0 5.3M18 14.4c1.6.6 2.7 1.8 3.3 3.4"/></svg>') +
+          `<span class="pin__count">${place.count}</span>` +
+          '</span>',
         iconSize: [44, 44],
         /* Anchor at the bottom centre so the pin points at the building. */
         iconAnchor: [22, 44],
         popupAnchor: [0, -44],
       }),
-    [hangout.mode],
+    [place.mine, place.count],
   )
 
   useEffect(() => {
@@ -181,24 +187,24 @@ function HangoutPin({ hangout, registry }) {
     el.setAttribute('aria-label', label)
   }, [label])
 
-  /* Let FocusHangout open this marker's popup by id. */
+  /* Let FocusPlace open this marker's popup by id. */
   useEffect(() => {
     if (!registry) return undefined
-    registry.set(hangout.id, markerRef)
+    registry.set(place.id, markerRef)
     return () => {
-      registry.delete(hangout.id)
+      registry.delete(place.id)
     }
-  }, [registry, hangout.id])
+  }, [registry, place.id])
 
   return (
     <Marker
       ref={markerRef}
-      position={[hangout.building.lat, hangout.building.lng]}
+      position={[place.lat, place.lng]}
       icon={icon}
       keyboard
     >
       <Popup>
-        <strong>{hangout.building.name}</strong>
+        <strong>{place.name}</strong>
         <br />
         {label}
       </Popup>
@@ -206,20 +212,20 @@ function HangoutPin({ hangout, registry }) {
   )
 }
 
-/* Flies to one hangout and opens its popup when `focus` changes.
+/* Flies to one building and opens its popup when `focus` changes.
 
    Driven by a plain prop so MapPage never holds a Leaflet ref: everything
    Leaflet-shaped stays inside this lazily loaded module. `focus.nonce`
    makes a repeat tap on the same row fly again. */
-function FocusHangout({ focus, hangouts, registry }) {
+function FocusPlace({ focus, places, registry }) {
   const map = useMap()
 
   useEffect(() => {
     if (!focus?.id) return
-    const hangout = hangouts.find((h) => h.id === focus.id)
-    if (!hangout) return
+    const place = places.find((item) => item.id === focus.id)
+    if (!place) return
 
-    map.flyTo([hangout.building.lat, hangout.building.lng], MAX_ZOOM - 1, {
+    map.flyTo([place.lat, place.lng], MAX_ZOOM - 1, {
       duration: 0.6,
     })
     /* Open after the flight so the popup lands in the right place. */
@@ -231,20 +237,20 @@ function FocusHangout({ focus, hangouts, registry }) {
     return () => {
       map.off('moveend', onEnd)
     }
-  }, [map, focus, hangouts, registry])
+  }, [map, focus, places, registry])
 
   return null
 }
 
 export default function CampusMapLive({
   position,
-  hangouts = [],
+  places = [],
   scheme = 'light',
   focus,
 }) {
   const center = position ?? CAMPUS_CENTER
   const tiles = tileSource(scheme)
-  /* id -> marker ref, so FocusHangout can open a popup by id.
+  /* id -> marker ref, so FocusPlace can open a popup by id.
      useMemo rather than useRef: a ref's .current may not be read during
      render, and this value is passed to children as a prop. */
   const registry = useMemo(() => new Map(), [])
@@ -278,10 +284,10 @@ export default function CampusMapLive({
       <PanLimit center={center} radiusM={PAN_RADIUS_M} />
       <KeepSized />
       {position && <MeMarker position={position} />}
-      {hangouts.map((h) => (
-        <HangoutPin key={h.id} hangout={h} registry={registry} />
+      {places.map((place) => (
+        <PlacePin key={place.id} place={place} registry={registry} />
       ))}
-      <FocusHangout focus={focus} hangouts={hangouts} registry={registry} />
+      <FocusPlace focus={focus} places={places} registry={registry} />
     </MapContainer>
   )
 }

@@ -1,7 +1,7 @@
 from collections import Counter
 from typing import Any
 
-from app.repositories.base import RepositoryError, execute
+from app.repositories.base import RepositoryError, database_error_code, execute
 from app.repositories.reference_data import ReferenceDataRepository
 
 
@@ -72,10 +72,15 @@ class StudentRepository:
         removed spot has to actually disappear. AGENTS.md caps it at three and
         the API enforces that before this is called.
         """
-        execute(
-            self.client.table("student_spots").delete().eq("student_id", student_id),
-            "clear student favourite spots",
-        )
+        try:
+            execute(
+                self.client.table("student_spots").delete().eq("student_id", student_id),
+                "clear student favourite spots",
+            )
+        except RepositoryError as exc:
+            if database_error_code(exc) == "PGRST205":
+                return
+            raise
         if not building_ids:
             return
         execute(
@@ -100,13 +105,18 @@ class StudentRepository:
         """
         if not student_ids:
             return {}
-        rows = execute(
-            self.client.table("student_spots")
-            .select("student_id,building_id,rank")
-            .in_("student_id", student_ids)
-            .order("rank"),
-            "read student favourite spots",
-        )
+        try:
+            rows = execute(
+                self.client.table("student_spots")
+                .select("student_id,building_id,rank")
+                .in_("student_id", student_ids)
+                .order("rank"),
+                "read student favourite spots",
+            )
+        except RepositoryError as exc:
+            if database_error_code(exc) == "PGRST205":
+                return {}
+            raise
         spots: dict[str, list[int]] = {}
         for row in rows:
             spots.setdefault(str(row["student_id"]), []).append(int(row["building_id"]))

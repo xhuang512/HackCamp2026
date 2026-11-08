@@ -1,20 +1,22 @@
 /* The only file in the frontend that calls the backend.
    Components call these functions and never fetch directly.
-   Shapes follow the API contract in AGENTS.md. Changing one is a team-wide
-   change, so raise it before editing a response shape here. */
+   Shapes follow the API contract in docs/AGENTS.md. Changing one is a
+   team-wide change, so raise it before editing a response shape here. */
 
 import * as fixtures from './fixtures.js'
 
 /* Vite inlines VITE_ vars into the public bundle, so only public values here.
    VITE_API_URL is unset in dev: requests go to /api and vite.config.js
-   proxies them to the FastAPI server on :8000. */
-const BASE = import.meta.env.VITE_API_URL ?? '/api'
+   proxies them to the FastAPI server. The trailing slash is stripped because
+   `${BASE}${path}` would otherwise build '//me'. */
+const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '')
 
-/* On until the endpoints exist. Set VITE_USE_FIXTURES=false in .env.local to
-   talk to the real backend. */
-const USE_FIXTURES = import.meta.env.VITE_USE_FIXTURES !== 'false'
+/* Off by default now that the endpoints exist. Set VITE_USE_FIXTURES=true in
+   .env.local to work on the screens with the backend stopped. */
+const USE_FIXTURES = import.meta.env.VITE_USE_FIXTURES === 'true'
 
 const SESSION_KEY = 'hangout.session'
+export const SESSION_EXPIRED_EVENT = 'hangout:session-expired'
 /* Fixture mode only. Holds the profile that POST /students "created", so the
    route gate can tell a new student from a returning one with the backend
    switched off. Never read when USE_FIXTURES is false. */
@@ -91,20 +93,43 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   }
 
   if (!res.ok) {
-    throw new ApiError(`${method} ${path} returned ${res.status}`, res.status)
+    /* A reset or expiry can invalidate a guest token. Clearing it here keeps
+       the route gate from retrying a dead session forever. Auth0 tokens are
+       owned by the SDK and never live under SESSION_KEY. */
+    if (res.status === 401 && getSession() !== null) {
+      setSession(null)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
+      }
+    }
+    throw new ApiError(await messageFor(res, method, path), res.status)
   }
   if (res.status === 204) return null
   return res.json()
 }
 
-/* ---------- Endpoints in the contract ---------- */
+/* FastAPI puts the reason in `detail`, and those strings are written for a
+   student to read ("Join the group before checking in."). Showing
+   "POST /groups returned 422" instead throws that away. */
+async function messageFor(res, method, path) {
+  try {
+    const body = await res.json()
+    if (typeof body?.detail === 'string') return body.detail
+  } catch {
+    /* Not JSON, or an empty body. Fall through to the generic line. */
+  }
+  return `${method} ${path} returned ${res.status}`
+}
+
+/* ---------- Identity ---------- */
 
 /** GET /me — does the signed-in user have a profile yet? The route gate calls
     this on every app open, so it is the one request between the splash screen
     and the first real screen. Keep it cheap.
 
       { "onboarded": false }
-      { "onboarded": true, "student": { id, first_name, paused, visibility } }
+      { "onboarded": true, "student": { id, first_name, is_guest, paused,
+                                        visibility, tags, favourite_spots } }
 
     A student with deleted_at set counts as not onboarded. */
 export async function getMe({ signal } = {}) {
@@ -131,6 +156,7 @@ export async function createStudent({
   tags = [],
   languages = [],
   ask_me_about = null,
+  favourite_spots = [],
   visibility = 'everyone',
   guest = false,
 }) {
@@ -141,6 +167,7 @@ export async function createStudent({
     tags,
     languages,
     ask_me_about,
+    favourite_spots,
     visibility,
     guest,
   }
@@ -157,25 +184,140 @@ export async function createStudent({
   return out
 }
 
-/** GET /me/now — the next gap and the suggested group. */
+/** PATCH /me — name, tags, visibility, favourite spots, paused.
+
+    Partial: send only what changed. Omitting a field leaves it alone, so the
+    Me tab's pause switch cannot blank the student's tags. */
+export async function patchMe(changes) {
+  if (USE_FIXTURES) {
+    const student = readFixtureStudent()
+    const next = { ...(student ?? {}), ...changes }
+    writeFixtureStudent(next)
+    return next
+  }
+  return request('/me', { method: 'PATCH', body: changes })
+}
+
+/** Pause or resume matching. The Me tab's switch and the paused banner both
+    call it.
+
+    Not a cosmetic toggle: the matcher reads it, so a paused student is in no
+    group it forms. */
+export async function setPaused(paused) {
+  return patchMe({ paused })
+}
+
+/** GET /options — the language and tag lists POST /students accepts.
+
+    The ids are a contract with the database's lookup tables, so the Me tab
+    and onboarding read them from here rather than from a hardcoded list that
+    can drift. src/lib/presets.js holds the offline fallback. */
+export async function getOptions({ signal } = {}) {
+  if (USE_FIXTURES) return fixtures.options
+  return request('/options', { signal })
+}
+
+/* ---------- Right now ---------- */
+
+/** GET /me/now — the next gap and the suggested group.
+
+      { gap: { day, start, end } | null,
+        group: { id, state, mode, members, shared, spot, joined_count,
+                 checked_in_count, seats_left, my_state, needs } | null }
+
+    `group` is null when nothing has been suggested, and the screen falls back
+    to getOpenGroups(). `spot` is null while the group is forming, because the
+    meeting spot is hidden until the group is confirmed. */
 export async function getMeNow({ signal } = {}) {
   if (USE_FIXTURES) return fixtures.meNow
   return request('/me/now', { signal })
 }
 
+/** GET /groups/open — confirmed groups in the caller's gap with seats left.
+    No names and no exact spot: the time, the general area, what they share. */
+export async function getOpenGroups({ signal } = {}) {
+  if (USE_FIXTURES) return fixtures.openGroups
+  return request('/groups/open', { signal })
+}
+
+/** POST /groups — start a group for a gap at a building the student picks.
+
+    `now` is the "I'm free now" case: the group starts at this minute instead
+    of at the next gap. The founder picked the spot, so they already know it;
+    the API still hides it until the group confirms, which is the same rule
+    for everyone. */
+export async function createGroup({ building, mode = 'social', now = false }) {
+  if (USE_FIXTURES) return fixtures.startedGroup({ building, mode })
+  return request('/groups', { method: 'POST', body: { building, mode, now } })
+}
+
+/** GET /groups/{id} — members only. A non-member gets 404, not 403, so a
+    stranger cannot learn that the group exists. */
+export async function getGroup(groupId, { signal } = {}) {
+  if (USE_FIXTURES) return fixtures.meNow.group
+  return request(`/groups/${encodeURIComponent(groupId)}`, { signal })
+}
+
 /** POST /groups/{id}/join */
 export async function joinGroup(groupId) {
-  if (USE_FIXTURES) return { response: 'joined' }
+  if (USE_FIXTURES) return { group_id: groupId, response: 'joined' }
   return request(`/groups/${encodeURIComponent(groupId)}/join`, { method: 'POST' })
 }
 
 /** POST /groups/{id}/skip */
 export async function skipGroup(groupId) {
-  if (USE_FIXTURES) return { response: 'skipped' }
+  if (USE_FIXTURES) return { group_id: groupId, response: 'skipped' }
   return request(`/groups/${encodeURIComponent(groupId)}/skip`, { method: 'POST' })
 }
 
-/** GET /projector — counts and anonymous group positions for the stage. */
+/* ---------- Check in ---------- */
+
+/** GET /groups/{id}/checkin-code — the caller's current code.
+
+    Returns { code, expires_in }. The code rotates every 30 seconds, so the
+    screen showing it re-asks when expires_in runs out. */
+export async function getCheckinCode(groupId, { signal } = {}) {
+  if (USE_FIXTURES) return { code: 'hc1.fixture.0.fixture', expires_in: 30 }
+  return request(`/groups/${encodeURIComponent(groupId)}/checkin-code`, { signal })
+}
+
+/** POST /groups/{id}/checkin — submit a groupmate's scanned code.
+
+    Checks both people in. `counted` is false when the pair had already
+    checked each other in: the scan worked and changed nothing. */
+export async function postCheckin(groupId, code) {
+  if (USE_FIXTURES) {
+    return { joined_count: 3, checked_in_count: 2, my_state: 'checked_in', counted: true }
+  }
+  return request(`/groups/${encodeURIComponent(groupId)}/checkin`, {
+    method: 'POST',
+    body: { code },
+  })
+}
+
+/* ---------- Map and projector ---------- */
+
+/** GET /map — building activity, plus the caller's group building once the
+    group is confirmed.
+
+      { buildings: [{ slug, name, lat, lng, free_count }],
+        my_group: { group_id, slug, name, lat, lng, joined_count,
+                    checked_in_count } | null }
+
+    Takes no position argument, and must not grow one. There is deliberately
+    no parameter through which the student's coordinates could reach the
+    backend. The server decides what is public from the group and building
+    rows; the phone never tells it where it is. See src/lib/useMyLocation.js
+    for the rest of that boundary.
+
+    Buildings with fewer than three students are absent rather than shown with
+    a small number, so nobody can be singled out by a pin. */
+export async function getMap({ signal } = {}) {
+  if (USE_FIXTURES) return fixtures.campusMap
+  return request('/map', { signal })
+}
+
+/** GET /projector — anonymous totals and dots for the stage. No login. */
 export async function getProjector({ signal } = {}) {
   if (USE_FIXTURES) return fixtures.projector
   return request('/projector', { signal })
@@ -183,7 +325,7 @@ export async function getProjector({ signal } = {}) {
 
 /** POST /admin/reset — re-run the seed. Demo mode only. */
 export async function adminReset() {
-  if (USE_FIXTURES) return { ok: true }
+  if (USE_FIXTURES) return { status: 'reset' }
   return request('/admin/reset', { method: 'POST' })
 }
 
@@ -192,48 +334,11 @@ export async function getHealth({ signal } = {}) {
   return request('/health', { signal })
 }
 
-/* ---------- Not in the contract yet ----------
-   The Map and Me screens need these, but AGENTS.md lists no endpoint for
-   either (`POST /tables` creates one; nothing reads them, and the only
-   profile route, GET /me, answers the gate's question rather than the Me
-   tab's). They serve fixtures only. Agree the shape with the team before
-   pointing them at a real route. */
-
-/** Open tables near the student. NEEDS AN ENDPOINT. */
-export async function listOpenTables({ signal } = {}) {
-  if (USE_FIXTURES) return fixtures.openTables
-  return request('/tables', { signal })
-}
-
-/** Pause or resume matching. The Me tab's switch and the paused banner both
-    call it. NEEDS AN ENDPOINT.
-
-    Pausing is a privacy setting the matcher must always respect, so this is
-    not a cosmetic toggle: until the route exists, fixture mode is the only
-    place it does anything. */
-export async function setPaused(paused) {
-  if (USE_FIXTURES) {
-    const student = readFixtureStudent()
-    if (student !== null) writeFixtureStudent({ ...student, paused })
-    return { paused }
-  }
-  return request('/me/paused', { method: 'POST', body: { paused } })
-}
-
-/** The Me tab's fuller profile: tags and the private hangout count, which
-    GET /me does not carry. NEEDS AN ENDPOINT. */
-export async function getMyProfile({ signal } = {}) {
-  if (USE_FIXTURES) {
-    const student = readFixtureStudent()
-    return { ...fixtures.me, ...(student === null ? {} : student) }
-  }
-  return request('/me/profile', { signal })
-}
-
 /* ---------- Fixture-mode profile store ----------
    Without this, fixture mode has to answer GET /me the same way forever, so
-   either onboarding or Right now is unreachable and the demo check cannot
-   pass with the backend off. Not used once VITE_USE_FIXTURES is false. */
+   either onboarding or Right now is unreachable and the screens cannot be
+   worked on with the backend stopped. Not used once VITE_USE_FIXTURES is
+   anything but 'true'. */
 
 function readFixtureStudent() {
   try {
@@ -260,19 +365,6 @@ export function clearFixtureStudent() {
   } catch {
     /* Nothing to do. */
   }
-}
-
-/** Hangouts happening now, for the map pins. NEEDS AN ENDPOINT.
-    '/hangouts/now' is a provisional path, not an agreed contract.
-
-    Takes no position argument, and must not grow one. There is
-    deliberately no parameter through which the student's coordinates could
-    reach the backend. The server decides what is public from the group and
-    building rows; the phone never tells it where it is. See
-    src/lib/useMyLocation.js for the rest of that boundary. */
-export async function listHangoutsNow({ signal } = {}) {
-  if (USE_FIXTURES) return fixtures.hangoutsNow
-  return request('/hangouts/now', { signal })
 }
 
 export const usingFixtures = USE_FIXTURES

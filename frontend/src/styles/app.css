@@ -348,7 +348,7 @@
   height: 100%;
 }
 
-/* ---------- Open tables ---------- */
+/* ---------- Open groups and forms ---------- */
 
 .section {
   padding: var(--s-9) var(--gutter) 0;
@@ -388,6 +388,117 @@
 .row__meta {
   font-size: var(--t-13);
   color: var(--c-ink-3);
+}
+
+.open-group,
+.start-card,
+.checkin-card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  padding: var(--s-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.open-group .btn {
+  align-self: flex-start;
+}
+
+.start-card,
+.checkin-grid,
+.page-action {
+  margin: var(--s-9) var(--gutter) 0;
+}
+
+.start-form,
+.typed-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.waiting,
+.group-status,
+.inline-error,
+.inline-message {
+  margin: 0;
+  font-size: var(--t-14);
+}
+
+.waiting {
+  padding: var(--s-6);
+  border-radius: var(--r-lg);
+  background: var(--c-sunken);
+  color: var(--c-ink-2);
+}
+
+.group-status,
+.inline-message {
+  color: var(--c-ink-2);
+  font-weight: var(--w-medium);
+}
+
+.inline-error {
+  color: var(--c-on-live-soft);
+  border-left: 4px solid var(--c-live);
+  padding: var(--s-4) var(--s-5);
+  background: var(--c-live-soft);
+}
+
+.checkin-grid {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.checkin-code {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  align-self: center;
+  border-radius: var(--r-md);
+}
+
+.typed-code {
+  display: block;
+  margin-top: var(--s-3);
+  padding: var(--s-4);
+  overflow-wrap: anywhere;
+  background: var(--c-sunken);
+  border-radius: var(--r-sm);
+  color: var(--c-ink);
+}
+
+.scanner-video {
+  width: 100%;
+  min-height: 200px;
+  border-radius: var(--r-lg);
+  background: var(--c-ink);
+  object-fit: cover;
+}
+
+.page-action .btn,
+.me-logout {
+  width: 100%;
+}
+
+.settings-field {
+  padding: var(--s-5) var(--s-7);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  background: var(--c-surface);
+}
+
+.me-logout {
+  margin: var(--s-9) var(--gutter) 0;
+  width: calc(100% - (2 * var(--gutter)));
 }
 
 /* ---------- Me ---------- */
@@ -890,7 +1001,7 @@
   font-weight: var(--w-medium);
 }
 
-/* ---------- Projector placeholder ----------
+/* ---------- Projector ----------
    Pinned dark whatever the viewer's system theme: it is a stage screen, and
    a light flash in a dark hall is the one thing the room will notice. */
 
@@ -935,6 +1046,44 @@
   margin: 0;
   font-size: var(--t-18);
   color: var(--c-stage-ink-2);
+}
+
+.stage__counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-10);
+  font-size: var(--t-18);
+  color: var(--c-stage-ink-2);
+}
+
+.stage__counts strong {
+  color: var(--c-stage-ink);
+}
+
+.stage__dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-5);
+  margin: var(--s-5) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--c-stage-ink-2);
+}
+
+.stage__dots li,
+.stage__error {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.stage__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-pill);
+  background: var(--c-stage-accent);
 }
 
 /* ---------- Full-bleed map screen ---------- */
@@ -1016,6 +1165,18 @@
   box-shadow: var(--shadow-card);
 }
 
+.map-group-status {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--c-map-scrim);
+  color: var(--c-ink);
+  box-shadow: var(--shadow-card);
+  font-size: var(--t-13);
+  font-weight: var(--w-semibold);
+}
+
 /* ---------- Hangout pins ---------- */
 
 /* Set on an L.divIcon, so this is the whole marker. 44px clears the touch
@@ -1042,9 +1203,23 @@
   color: var(--c-on-pin-study);
 }
 
+.pin--mine {
+  background: var(--c-pin-mine);
+  color: var(--c-on-pin-mine);
+}
+
 .pin svg {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+}
+
+/* The count rides on the pin, because a pin that says only "here" makes a
+   student tap it to learn whether it is worth walking to. */
+.pin__count {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 1px;
 }
 
 /* ---------- The bottom sheet ---------- */
@@ -1120,6 +1295,7 @@
 
 .pin-list__dot--social { background: var(--c-pin-social); }
 .pin-list__dot--study { background: var(--c-pin-study); }
+.pin-list__dot--mine { background: var(--c-pin-mine); }
 
 .pin-list__text {
   display: flex;

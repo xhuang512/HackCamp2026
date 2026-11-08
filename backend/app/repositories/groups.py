@@ -1,8 +1,13 @@
 from datetime import date, time
 from typing import Any
 
-from app.constants import FORMING, LIVE_GROUP_STATES
-from app.repositories.base import RecordNotFoundError, execute
+from app.constants import CONFIRMED, DISSOLVED, FORMING, LIVE_GROUP_STATES
+from app.repositories.base import (
+    RecordNotFoundError,
+    RepositoryError,
+    database_error_code,
+    execute,
+)
 from app.repositories.buildings import COLUMNS as BUILDING_COLUMNS
 
 COLUMNS = "id,on_date,start_time,end_time,building_id,mode,status,created_at"
@@ -78,28 +83,53 @@ class GroupRepository:
         mode: str = "social",
         status: str = FORMING,
     ) -> dict[str, Any]:
-        rows = execute(
-            self.client.table("groups").insert(
-                {
-                    "on_date": on_date.isoformat(),
-                    "start_time": start_time.isoformat(timespec="minutes"),
-                    "end_time": end_time.isoformat(timespec="minutes"),
-                    "building_id": building_id,
-                    "mode": mode,
-                    "status": status,
-                }
-            ),
-            "create matched group",
-        )
+        def insert(stored_status: str) -> list[dict[str, Any]]:
+            return execute(
+                self.client.table("groups").insert(
+                    {
+                        "on_date": on_date.isoformat(),
+                        "start_time": start_time.isoformat(timespec="minutes"),
+                        "end_time": end_time.isoformat(timespec="minutes"),
+                        "building_id": building_id,
+                        "mode": mode,
+                        "status": stored_status,
+                    }
+                ),
+                "create matched group",
+            )
+        try:
+            rows = insert(status)
+        except RepositoryError as exc:
+            if database_error_code(exc) != "23514" or status not in {
+                FORMING,
+                CONFIRMED,
+            }:
+                raise
+            rows = insert("proposed")
         if not rows:
             raise RecordNotFoundError("Database did not return the created group")
         return rows[0]
 
     def set_status(self, group_id: str, status: str) -> None:
-        execute(
-            self.client.table("groups").update({"status": status}).eq("id", group_id),
-            "update group status",
-        )
+        try:
+            execute(
+                self.client.table("groups").update({"status": status}).eq("id", group_id),
+                "update group status",
+            )
+        except RepositoryError as exc:
+            if database_error_code(exc) != "23514":
+                raise
+            legacy = {
+                FORMING: "proposed",
+                CONFIRMED: "proposed",
+                DISSOLVED: "cancelled",
+            }
+            if status not in legacy:
+                raise
+            execute(
+                self.client.table("groups").update({"status": legacy[status]}).eq("id", group_id),
+                "update legacy group status",
+            )
 
     def delete(self, group_id: str) -> None:
         execute(

@@ -27,10 +27,14 @@ globalThis.window = {
   removeEventListener: () => {},
 }
 
-const { createServer } = await import('/Users/sothea/Documents/Files/Code/HackCamp2026-login/frontend/node_modules/vite/dist/node/index.js')
+/* Plain imports, not absolute paths. These two lines pointed at the
+   worktree this script was written in, which loaded a second copy of Vite
+   and of React from another directory and failed with "Invalid hook call"
+   anywhere else. */
+const { createServer } = await import('vite')
 const vite = await createServer({
-  root: '/Users/sothea/Documents/Files/Code/HackCamp2026-login/frontend',
-  server: { middlewareMode: true },
+  root: import.meta.dirname,
+  server: { middlewareMode: true, hmr: false },
   appType: 'custom',
   logLevel: 'error',
 })
@@ -63,7 +67,7 @@ const welcome = render('/', h(App))
 has(welcome, 'Continue as guest', 'no session shows Welcome')
 hasNot(welcome, 'tabbar', 'Welcome has no tab bar')
 
-hasNot(welcome, 'Continue with UBC email', 'email button hidden without Auth0')
+hasNot(welcome, 'Continue with Google', 'Google button hidden without Auth0')
 
 // 2. /projector is public: it renders with no session at all
 const projector = render('/projector', h(App))
