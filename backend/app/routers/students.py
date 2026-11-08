@@ -1,7 +1,7 @@
 import logging
 import os
-from datetime import date
-from typing import Annotated, Any, Literal
+from datetime import date, datetime, timezone
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,7 +20,7 @@ from app.repositories.group_members import GroupMemberRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.reference_data import normalize_course_codes
 from app.repositories.students import StudentRepository
-from app.routers.groups import MeetingSpot, SuggestedGroup
+from app.routers.groups import GroupLifecycleStatus, MeetingSpot, SuggestedGroup
 
 router = APIRouter(tags=["students"])
 logger = logging.getLogger(__name__)
@@ -97,6 +97,10 @@ class CurrentSuggestionResponse(BaseModel):
                     "shared": ["STAT 302", "2 transfers", "Korean"],
                     "spot": {"building": "The Nest", "walk_min": 4},
                     "response": "pending",
+                    "status": "forming",
+                    "accepted_count": 2,
+                    "minimum_required": 3,
+                    "invite_expires_at": "2026-11-10T13:05:00-08:00",
                 },
             }
         }
@@ -221,7 +225,7 @@ def get_current_suggestion(
         memberships = [
             membership
             for membership in members.list_for_student(student_id)
-            if membership["response"] != "skipped"
+            if membership["invitation_status"] not in {"declined", "expired"}
         ]
         membership_by_group = {
             str(membership["group_id"]): membership for membership in memberships
@@ -234,21 +238,49 @@ def get_current_suggestion(
         group_id = str(group["id"])
         group_members = members.list_for_group(group_id)
         active_members = [
-            member for member in group_members if member["response"] != "skipped"
+            member
+            for member in group_members
+            if member["invitation_status"] in {"invited", "accepted"}
+        ]
+        accepted_members = [
+            member
+            for member in group_members
+            if member["invitation_status"] == "accepted"
         ]
         member_ids = [str(member["student_id"]) for member in active_members]
+        accepted_member_ids = [
+            str(member["student_id"]) for member in accepted_members
+        ]
+        accepted_count = len(accepted_members)
+        group_status = _lifecycle_status(str(group["status"]))
+        invite_expires_at = _invitation_deadline(group)
+        current_membership = membership_by_group[group_id]
+        current_invitation_status = current_membership["invitation_status"]
+        if (
+            group_status == "forming"
+            and datetime.now(timezone.utc) >= invite_expires_at
+        ) or (
+            current_invitation_status == "invited"
+            and datetime.now(timezone.utc) >= invite_expires_at
+        ):
+            raise NoSuggestionError
         current_response = membership_by_group[group_id]["response"]
         names: list[str] = []
-        if current_response == "joined":
-            names_by_id = students.public_names(member_ids)
-            names = [names_by_id[item] for item in member_ids if item in names_by_id]
+        if current_invitation_status == "accepted":
+            names_by_id = students.public_names(accepted_member_ids)
+            names = [
+                names_by_id[item]
+                for item in accepted_member_ids
+                if item in names_by_id
+            ]
         shared = students.shared_signals(member_ids)
-        everyone_joined = bool(group_members) and all(
-            member["response"] == "joined" for member in group_members
+        can_view_spot = (
+            current_invitation_status == "accepted"
+            and group_status in {"confirmed", "active"}
         )
         building = (
             groups.building_name(group.get("building_id"))
-            if everyone_joined
+            if can_view_spot
             else "To be announced"
         )
     except NoSuggestionError:
@@ -273,6 +305,10 @@ def get_current_suggestion(
             shared=shared,
             spot=MeetingSpot(building=building, walk_min=0),
             response=current_response,
+            status=group_status,
+            accepted_count=accepted_count,
+            minimum_required=3,
+            invite_expires_at=invite_expires_at,
         ),
     )
 
@@ -311,6 +347,24 @@ def _first_group_with_availability(
 
 def _short_time(value: str) -> str:
     return value[:5]
+
+
+def _lifecycle_status(
+    stored_status: str,
+) -> GroupLifecycleStatus:
+    if stored_status in {"forming", "confirmed", "active", "completed", "dissolved"}:
+        return cast(GroupLifecycleStatus, stored_status)
+    raise RepositoryError("Database returned an invalid group lifecycle status")
+
+
+def _invitation_deadline(group: dict[str, Any]) -> datetime:
+    persisted = group.get("invite_expires_at")
+    if not persisted:
+        raise RepositoryError("Database returned no invitation deadline")
+    parsed = datetime.fromisoformat(str(persisted).replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise RepositoryError("Database returned an invalid invitation deadline")
+    return parsed
 
 
 def _day_name(day: int) -> Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]:

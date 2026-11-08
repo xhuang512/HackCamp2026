@@ -1,6 +1,7 @@
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -9,6 +10,7 @@ from app.engine import form_groups
 from app.matching import run_matching
 from app.main import app
 from app.repositories import RecordNotFoundError
+from app.timezones import APPLICATION_TIMEZONE
 from tests.fakes import FakeSupabase, seed_tables
 
 
@@ -98,7 +100,9 @@ class MatchingPersistenceTests(unittest.TestCase):
         self.assertEqual(group["building_id"], 1)
         memberships = self.database.tables["group_members"]
         self.assertEqual(len(memberships), 4)
-        self.assertEqual({row["response"] for row in memberships}, {"pending"})
+        self.assertEqual(
+            {row["invitation_status"] for row in memberships}, {"invited"}
+        )
 
     def test_rerun_does_not_create_duplicate_groups(self) -> None:
         first = run_matching(self.database, self.target_date, persist=True)
@@ -158,7 +162,10 @@ class MatchingPersistenceTests(unittest.TestCase):
                 "end_time": "14:30:00",
                 "building_id": 1,
                 "mode": "social",
-                "status": "proposed",
+                "status": "forming",
+                "invite_expires_at": "2026-11-10T13:05:00-08:00",
+                "confirmed_at": None,
+                "status_changed_at": "2026-11-07T00:00:00Z",
                 "created_at": "2026-11-07T00:00:00Z",
             }
         ]
@@ -166,7 +173,7 @@ class MatchingPersistenceTests(unittest.TestCase):
             {
                 "group_id": "existing",
                 "student_id": f"s{index}",
-                "response": "pending",
+                "invitation_status": "invited",
                 "arrived_at": None,
             }
             for index in range(4)
@@ -185,6 +192,195 @@ class MatchingPersistenceTests(unittest.TestCase):
         self.assertEqual(second.created_group_ids, ())
         self.assertEqual(second.filled_group_ids, ())
         self.assertEqual(len(self.database.tables["groups"]), 2)
+
+    def test_persistence_uses_lifecycle_columns(self) -> None:
+        result = run_matching(self.database, self.target_date, persist=True)
+
+        self.assertEqual(len(result.created_group_ids), 1)
+        group = self.database.tables["groups"][0]
+        self.assertEqual(group["status"], "forming")
+        self.assertEqual(
+            group["invite_expires_at"],
+            "2026-11-10T12:50:00-07:00",
+        )
+        self.assertEqual(
+            {
+                membership["invitation_status"]
+                for membership in self.database.tables["group_members"]
+            },
+            {"invited"},
+        )
+        self.assertTrue(
+            all(
+                "response" not in membership
+                for membership in self.database.tables["group_members"]
+            )
+        )
+
+    def test_active_group_blocks_duplicate_assignment_but_cannot_be_filled(self) -> None:
+        self.database.tables["groups"] = [self._existing_group("active")]
+        self.database.tables["group_members"] = [
+            self._membership("s0", "accepted")
+        ]
+
+        result = run_matching(self.database, self.target_date, persist=True)
+
+        self.assertEqual(result.filled_group_ids, ())
+        self.assertEqual(len(result.created_group_ids), 1)
+        created_id = result.created_group_ids[0]
+        self.assertEqual(
+            {
+                row["student_id"]
+                for row in self.database.tables["group_members"]
+                if row["group_id"] == created_id
+            },
+            {"s1", "s2", "s3"},
+        )
+
+    def test_terminal_groups_are_never_filled(self) -> None:
+        for status in ("completed", "dissolved"):
+            with self.subTest(status=status):
+                database = FakeSupabase(self.database.tables)
+                database.tables["groups"] = [self._existing_group(status)]
+                database.tables["group_members"] = [
+                    self._membership("s0", "accepted")
+                ]
+
+                result = run_matching(database, self.target_date, persist=True)
+
+                self.assertEqual(result.filled_group_ids, ())
+                terminal_members = [
+                    row
+                    for row in database.tables["group_members"]
+                    if row["group_id"] == "existing"
+                ]
+                self.assertEqual(len(terminal_members), 1)
+
+    def test_expired_group_does_not_block_a_new_match(self) -> None:
+        expired = datetime.now(ZoneInfo("America/Vancouver")) - timedelta(minutes=1)
+        self.database.tables["groups"] = [
+            self._existing_group("forming", deadline=expired)
+        ]
+        self.database.tables["group_members"] = [self._membership("s0", "invited")]
+
+        result = run_matching(self.database, self.target_date, persist=True)
+
+        self.assertEqual(result.filled_group_ids, ())
+        self.assertEqual(len(result.created_group_ids), 1)
+        self.assertEqual(result.already_assigned_students, 0)
+
+    def test_declined_and_expired_rows_do_not_consume_active_capacity(self) -> None:
+        self.database.tables["students"] = [
+            {
+                "id": f"s{index}",
+                "first_name": f"Student {index}",
+                "paused": False,
+                "deleted_at": None,
+            }
+            for index in range(7)
+        ]
+        self.database.tables["free_blocks"] = [
+            {
+                "id": index,
+                "student_id": f"s{index}",
+                "day": 1,
+                "start_time": "13:00:00",
+                "end_time": "15:00:00",
+            }
+            for index in range(7)
+        ]
+        self.database.tables["groups"] = [self._existing_group("forming")]
+        self.database.tables["group_members"] = [
+            self._membership("s0", "invited"),
+            self._membership("s1", "accepted"),
+            self._membership("s2", "declined"),
+            self._membership("s3", "expired"),
+        ]
+
+        result = run_matching(self.database, self.target_date, persist=True)
+
+        self.assertEqual(result.filled_group_ids, ("existing",))
+        active_ids = {
+            row["student_id"]
+            for row in self.database.tables["group_members"]
+            if row["group_id"] == "existing"
+            and row["invitation_status"] in {"invited", "accepted"}
+        }
+        self.assertEqual(active_ids, {"s0", "s1", "s4", "s5", "s6"})
+
+    def test_does_not_create_group_after_its_deadline(self) -> None:
+        today = date.today()
+        for block in self.database.tables["free_blocks"]:
+            block.update(
+                {
+                    "day": today.weekday(),
+                    "start_time": "00:00:00",
+                    "end_time": "01:00:00",
+                }
+            )
+
+        result = run_matching(self.database, today, persist=True)
+
+        self.assertEqual(result.created_group_ids, ())
+        self.assertEqual(self.database.tables["groups"], [])
+        self.assertEqual(self.database.tables["group_members"], [])
+
+    def _existing_group(
+        self,
+        status: str,
+        *,
+        deadline: datetime | None = None,
+    ) -> dict[str, object]:
+        return {
+            "id": "existing",
+            "on_date": self.target_date.isoformat(),
+            "start_time": "13:15:00",
+            "end_time": "14:30:00",
+            "building_id": 1,
+            "mode": "social",
+            "status": status,
+            "invite_expires_at": (
+                deadline
+                or datetime(2026, 11, 10, 13, 5, tzinfo=ZoneInfo("America/Vancouver"))
+            ).isoformat(),
+            "confirmed_at": None,
+            "status_changed_at": "2026-11-07T00:00:00Z",
+            "created_at": "2026-11-07T00:00:00Z",
+        }
+
+    @staticmethod
+    def _membership(student_id: str, status: str) -> dict[str, object]:
+        return {
+            "group_id": "existing",
+            "student_id": student_id,
+            "invitation_status": status,
+            "arrived_at": None,
+        }
+
+
+class VancouverTimezoneTests(unittest.TestCase):
+    def test_historical_pst_and_pdt_offsets(self) -> None:
+        winter = datetime(2025, 1, 15, 13, tzinfo=APPLICATION_TIMEZONE)
+        summer = datetime(2025, 7, 15, 13, tzinfo=APPLICATION_TIMEZONE)
+
+        self.assertEqual(winter.utcoffset(), timedelta(hours=-8))
+        self.assertEqual(summer.utcoffset(), timedelta(hours=-7))
+        self.assertEqual(winter.astimezone(timezone.utc).hour, 21)
+        self.assertEqual(summer.astimezone(timezone.utc).hour, 20)
+
+    def test_post_transition_vancouver_uses_permanent_utc_minus_seven(self) -> None:
+        meeting_start = datetime(2026, 11, 10, 13, tzinfo=APPLICATION_TIMEZONE)
+        deadline = meeting_start - timedelta(minutes=10)
+
+        self.assertEqual(meeting_start.utcoffset(), timedelta(hours=-7))
+        self.assertEqual(
+            meeting_start.astimezone(timezone.utc).isoformat(),
+            "2026-11-10T20:00:00+00:00",
+        )
+        self.assertEqual(
+            deadline.astimezone(timezone.utc).isoformat(),
+            "2026-11-10T19:50:00+00:00",
+        )
 
 
 class AutomaticMatchingTests(unittest.TestCase):
@@ -227,8 +423,11 @@ class AutomaticMatchingTests(unittest.TestCase):
         self.assertEqual(len(self.database.tables["groups"]), 2)
         self.assertEqual(len(self.database.tables["group_members"]), 6)
         self.assertEqual(
-            {membership["response"] for membership in self.database.tables["group_members"]},
-            {"pending"},
+            {
+                membership["invitation_status"]
+                for membership in self.database.tables["group_members"]
+            },
+            {"invited"},
         )
         for session in sessions:
             suggestion = self.client.get(

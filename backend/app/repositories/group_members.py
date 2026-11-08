@@ -1,8 +1,26 @@
 from typing import Any, Literal
 
-from app.repositories.base import RecordNotFoundError, execute
+from app.repositories.base import (
+    InvitationConflictError,
+    RecordNotFoundError,
+    RepositoryError,
+    execute,
+)
 
-MemberResponse = Literal["pending", "joined", "skipped"]
+ExternalResponse = Literal["pending", "joined", "skipped"]
+InvitationStatus = Literal["invited", "accepted", "declined", "expired"]
+
+_INVITATION_TO_EXTERNAL: dict[str, ExternalResponse] = {
+    "invited": "pending",
+    "accepted": "joined",
+    "declined": "skipped",
+    "expired": "skipped",
+}
+_EXTERNAL_TO_INVITATION: dict[str, InvitationStatus] = {
+    "pending": "invited",
+    "joined": "accepted",
+    "skipped": "declined",
+}
 
 
 class GroupMemberRepository:
@@ -10,17 +28,17 @@ class GroupMemberRepository:
         self.client = client
 
     def list_for_student(self, student_id: str) -> list[dict[str, Any]]:
-        return execute(
+        return self._list(
             self.client.table("group_members")
-            .select("group_id,student_id,response,arrived_at")
+            .select(self._select_columns())
             .eq("student_id", student_id),
             "read student group memberships",
         )
 
     def list_for_group(self, group_id: str) -> list[dict[str, Any]]:
-        return execute(
+        return self._list(
             self.client.table("group_members")
-            .select("group_id,student_id,response,arrived_at")
+            .select(self._select_columns())
             .eq("group_id", group_id),
             "read group members",
         )
@@ -28,47 +46,91 @@ class GroupMemberRepository:
     def list_for_groups(self, group_ids: list[str]) -> list[dict[str, Any]]:
         if not group_ids:
             return []
-        return execute(
+        return self._list(
             self.client.table("group_members")
-            .select("group_id,student_id,response,arrived_at")
+            .select(self._select_columns())
             .in_("group_id", group_ids),
             "read memberships for existing groups",
         )
 
-    def create_pending(
+    def create_invited(
         self,
         group_id: str,
         student_ids: tuple[str, ...],
     ) -> list[dict[str, Any]]:
-        return execute(
+        rows = execute(
             self.client.table("group_members").insert(
                 [
                     {
                         "group_id": group_id,
                         "student_id": student_id,
-                        "response": "pending",
+                        "invitation_status": "invited",
                     }
                     for student_id in student_ids
                 ]
             ),
-            "create pending group memberships",
+            "create invited group memberships",
         )
+        return [normalize_membership(row) for row in rows]
 
-    def update_response(
+    def respond_to_invitation(
         self,
         group_id: str,
         student_id: str,
         response: Literal["joined", "skipped"],
     ) -> dict[str, Any]:
-        rows = execute(
-            self.client.table("group_members")
-            .update({"response": response})
-            .eq("group_id", group_id)
-            .eq("student_id", student_id),
-            "update group membership response",
-        )
+        try:
+            rpc_response = self.client.rpc(
+                "respond_to_group_invitation",
+                {
+                    "p_group_id": group_id,
+                    "p_student_id": student_id,
+                    "p_response": _EXTERNAL_TO_INVITATION[response],
+                },
+            ).execute()
+        except Exception as exc:
+            code = _error_attribute(exc, "code")
+            message = _error_attribute(exc, "message") or "Invitation response was rejected"
+            if code in {"P0002", "22P02"}:
+                raise RecordNotFoundError(message) from exc
+            if code in {"P0001", "22023"}:
+                raise InvitationConflictError(message) from exc
+            raise RepositoryError(
+                "Database operation failed: respond to group invitation"
+            ) from exc
+
+        rows = getattr(rpc_response, "data", None)
+        if rows is None:
+            raise RepositoryError(
+                "Database returned no result: respond to group invitation"
+            )
         if not rows:
             raise RecordNotFoundError(
                 "No membership exists for the current student and group"
             )
-        return rows[0]
+        return normalize_membership(rows[0])
+
+    def _list(self, query: Any, operation: str) -> list[dict[str, Any]]:
+        return [normalize_membership(row) for row in execute(query, operation)]
+
+    @staticmethod
+    def _select_columns() -> str:
+        return "group_id,student_id,invitation_status,arrived_at"
+
+
+def normalize_membership(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    invitation_status = normalized.get("invitation_status")
+    response = normalized.get("response")
+    if response is None and invitation_status is not None:
+        response = _INVITATION_TO_EXTERNAL[str(invitation_status)]
+    normalized["invitation_status"] = invitation_status
+    normalized["response"] = response
+    return normalized
+
+
+def _error_attribute(error: Exception, name: str) -> str | None:
+    value = getattr(error, name, None)
+    if value is None and error.args and isinstance(error.args[0], dict):
+        value = error.args[0].get(name)
+    return str(value) if value is not None else None

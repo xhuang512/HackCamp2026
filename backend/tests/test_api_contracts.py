@@ -127,8 +127,8 @@ class ApiContractTests(unittest.TestCase):
             for row in self.database.tables["group_members"]
             if row["group_id"] == "g_41" and row["student_id"] == "s_other"
         )
-        self.assertEqual(current["response"], "joined")
-        self.assertEqual(other["response"], "joined")
+        self.assertEqual(current["invitation_status"], "accepted")
+        self.assertEqual(other["invitation_status"], "accepted")
 
     def test_skip_returns_skipped_response(self) -> None:
         response = self.client.post("/groups/g_41/skip", headers=self.auth_headers)
@@ -160,7 +160,8 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.json(), {"detail": "Demo reset is disabled"})
 
     def test_skeleton_endpoints_are_in_openapi(self) -> None:
-        paths = self.client.get("/openapi.json").json()["paths"]
+        openapi = self.client.get("/openapi.json").json()
+        paths = openapi["paths"]
 
         self.assertTrue(
             {
@@ -172,6 +173,15 @@ class ApiContractTests(unittest.TestCase):
                 "/projector",
                 "/admin/reset",
             }.issubset(paths)
+        )
+        suggested_group = openapi["components"]["schemas"]["SuggestedGroup"]
+        self.assertTrue(
+            {
+                "status",
+                "accepted_count",
+                "minimum_required",
+                "invite_expires_at",
+            }.issubset(suggested_group["properties"])
         )
 
 

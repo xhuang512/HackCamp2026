@@ -5,7 +5,7 @@ but are stored under normalized, unique codes.
 
 ## Seed the catalogs
 
-Apply `sql/001_core_schema.sql` and configure the root `.env` with
+Apply `sql/schema.sql` to a fresh project and configure the root `.env` with
 `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`. Then run from `backend/`:
 
 ```bash

@@ -156,8 +156,8 @@ npm run preview   # Preview the production build
 
 ## Database Setup
 
-Apply `backend/sql/001_core_schema.sql` to the Supabase project, then seed the
-controlled onboarding catalogs:
+Apply `backend/sql/schema.sql` once to a completely fresh Supabase project, then
+seed the controlled onboarding catalogs:
 
 ```bash
 cd backend
@@ -166,6 +166,76 @@ cd backend
 
 The backend uses the service-role key for privileged database access. Browser
 clients call FastAPI and do not receive that key.
+
+### Lifecycle V2 schema
+
+Lifecycle V2 is the only schema supported by the backend. The canonical schema
+creates the final `groups` and `group_members` tables directly, enables RLS,
+installs the atomic `respond_to_group_invitation` RPC, and grants that RPC only
+to the service role. It also uses current Vancouver timezone rules for meeting
+deadlines; install the backend's pinned dependencies so Python uses matching
+IANA timezone data.
+
+`schema.sql` is a fresh-install schema, not an upgrade script. Do not apply it
+over an existing database. A database that was already initialized with the
+former migration sequence should be inspected separately before any schema
+changes. Schema installation is never performed automatically at application
+startup.
+
+### Live Supabase integration validation
+
+The main integration tests use the backend's normal Supabase configuration.
+Point these variables at a database that is safe for temporary test writes. The
+database does not need to be empty: test students, groups, memberships, and the
+test building receive a unique prefix or identifier, and cleanup targets only
+those records.
+
+```bash
+export SUPABASE_URL=<test-or-staging-project-url>
+export SUPABASE_SERVICE_KEY=<test-or-staging-service-role-key>
+export SUPABASE_TEST_CONFIRM_WRITES=YES_I_AM_USING_A_SAFE_TEST_DATABASE
+```
+
+Run the real Supabase lifecycle tests explicitly:
+
+```bash
+cd backend
+RUN_SUPABASE_INTEGRATION=1 .venv/bin/python -m pytest \
+  tests/test_lifecycle_supabase_integration.py -v
+```
+
+The tests remain skipped unless `RUN_SUPABASE_INTEGRATION=1` is set and refuse
+to write without the exact confirmation above. Automatic matching is suppressed
+during live registration so a shared staging database cannot pull unrelated
+students into test groups; deterministic repository tests cover that trigger.
+The live suite creates its own memberships and exercises lifecycle confirmation,
+privacy, idempotency, invalid and expired responses, and concurrent acceptances.
+
+Anonymous RLS tests are a separate optional class. Add the normal public key to
+run them; the main API integration tests do not require it:
+
+```bash
+export SUPABASE_ANON_KEY=<test-or-staging-anon-key>
+```
+
+### Optional SQL setup for a fresh project
+
+Schema installation is separate from API integration testing. Only when
+initializing a confirmed empty disposable project, export the direct connection
+and project-reference safeguards, then run the setup script:
+
+```bash
+export SUPABASE_DB_URL=<empty-disposable-postgres-connection-string>
+export SUPABASE_PROJECT_REF=<disposable-project-ref>
+export SUPABASE_SQL_SETUP_CONFIRM_PROJECT_REF=<disposable-project-ref>
+export SUPABASE_SQL_SETUP_CONFIRM_EMPTY=YES_INITIALIZE_EMPTY_DATABASE
+backend/scripts/setup_lifecycle_test_db.sh
+```
+
+The setup script refuses a database that already contains `public.students`,
+requires the project reference to appear in `SUPABASE_DB_URL`, and applies
+`schema.sql` with PostgreSQL's stop-on-first-error behavior. None of these
+SQL-setup variables are required by the backend or API integration tests.
 
 ## Frontend API integration contract
 
@@ -189,7 +259,11 @@ now contain the persisted group's actual meeting date and interval:
     "members": [],
     "shared": ["STAT 302"],
     "spot": {"building": "To be announced", "walk_min": 0},
-    "response": "pending"
+    "response": "pending",
+    "status": "forming",
+    "accepted_count": 2,
+    "minimum_required": 3,
+    "invite_expires_at": "2026-11-10T13:05:00-08:00"
   }
 }
 ```
@@ -204,8 +278,10 @@ The frontend should treat this as a normal waiting state, not an error. Missing
 or invalid authentication remains HTTP 401. Database and Supabase failures remain
 HTTP 502 or 503. Validation failures remain HTTP 422.
 
-Names remain hidden until the requesting student joins, and the real meeting
-building remains hidden until every group membership has joined.
+Names remain hidden until the requesting student joins, and only accepted
+members' names are returned. The real meeting building is visible only to an
+accepted member after the group reaches three acceptances and becomes confirmed
+or active.
 
 ## Development Notes
 
