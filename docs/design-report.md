@@ -397,9 +397,22 @@ Every screen was compared at 390px against its frame screenshot in both
 modes. Light mode was checked by replaying the light declarations over the
 dark `@media` block, since the machine running this is in dark mode.
 
-The AGENTS.md demo check was **not** run end to end. It needs a backend, the
-shared Supabase project and two phones checking each other in. What is above
-is what a desk can verify.
+The AGENTS.md demo check was **not** run end to end, and right now it
+cannot be. The shared Supabase project is still on the pre-Lifecycle-V2
+shape, so every groups read 502s through the domain:
+
+```
+$ curl -s https://api.ubcmeet.fit/projector
+error code: 502          # while /health returns {"status":"ok"}
+```
+
+Measured, not inferred. The delta and two ways to apply it are in
+`docs/schema-gap.md`. **Until that lands, the six-digit code cannot be
+exercised against the live database** — the backend tests cover it, two
+phones have not. Treat the check-in work as unit-verified and
+integration-unverified.
+
+Everything above the line is what a desk can verify without that database.
 
 ### What still differs from the design, and why
 
@@ -448,11 +461,30 @@ would help.
 New from this pass, on top of the thirteen items in
 `docs/integration-report.md`:
 
-1. **Rate limit `POST /groups/{id}/checkin`.** The typed code is six digits
-   now. Nothing throttles guesses, and that is the one mitigation the design
-   of the code itself cannot provide. Sized above: about 70,000 requests in a
-   60-second window for even odds, from a caller who is already a member of
-   the group, to win a false check-in. Not urgent, worth doing.
+1. ~~**Rate limit `POST /groups/{id}/checkin`.**~~ **Decided, and not backend
+   work.** It goes in as a Cloudflare rule, so nothing lands in
+   `app/routers/groups.py`. Spec is at `deploy/rate-limit.md` on
+   `feat/deploy`: hostname `api.ubcmeet.fit`, POST, path ends with
+   `/checkin`, per IP, 100 requests per 10 seconds, block 60.
+
+   The threshold is loose on purpose, and the reason matters more than the
+   number. Free-plan rate limiting counts per IP only, and a hackathon room
+   sits behind one venue NAT, so Cloudflare sees the whole audience as a
+   single address. A tight limit would lock the room out mid-demo, which is
+   a worse failure than the attack it prevents. 100 per 10s still cuts a
+   1,000+ req/s brute force by about 200x.
+
+   Two things about that rule bear on this screen:
+
+   - It is **POST-only on purpose**. `GET /groups/{id}/checkin-code` is
+     polled by every phone once per rotation, and fifty phones behind one IP
+     is about a hundred polls a minute. `ends_with(/checkin)` also matches
+     `/checkin-code`, so the method condition is load-bearing rather than
+     belt and braces. Drop it and the code display dies for the whole room
+     at once.
+   - `CheckInCode` polls with a chained `setTimeout` at `expires_in`, which
+     is **one request per rotation** and cannot pile up. Checked rather than
+     assumed. Keep it that way.
 2. **`OpenGroupOut` has no `joined_count`.** It blocks the attendee row the
    8138:2 frame draws on every open-group card. `seats_left` alone cannot
    stand in, because turning it into a count needs the group's capacity.
